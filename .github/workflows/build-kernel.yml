@@ -72,6 +72,16 @@ jobs:
           git clone -b legacy-susfs-v2 https://github.com/sidex15/KernelSU-Next.git KernelSU-Next
           (cd KernelSU-Next && git fetch --tags || true)
           cp -r KernelSU-Next/kernel drivers/kernelsu
+          rm -rf drivers/kernelsu/include/uapi
+          cp -r KernelSU-Next/uapi drivers/kernelsu/include/uapi
+          cp -r KernelSU-Next/uapi drivers/kernelsu/uapi
+          
+          cd KernelSU-Next
+          KSU_VER=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.9")
+          KSU_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "12797")
+          cd ..
+          echo "KSU_VERSION_TAG=$KSU_VER" >> $GITHUB_ENV
+          echo "KSU_GIT_VERSION=$KSU_COUNT" >> $GITHUB_ENV
 
       - name: Build Kernel
         id: build_kernel
@@ -112,6 +122,8 @@ jobs:
           make -j$(nproc --all) $MAKE_PARAMS \
             CONFIG_DEBUG_SECTION_MISMATCH=y \
             CONFIG_BUILD_ARM64_DT_OVERLAY=y \
+            KSU_GIT_VERSION="${KSU_GIT_VERSION}" \
+            KSU_VERSION_TAG="${KSU_VERSION_TAG}" \
             Image dtbs 2>&1 | tee build.log
           BUILD_STATUS=${PIPESTATUS[0]}
 
