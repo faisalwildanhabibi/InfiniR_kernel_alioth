@@ -68,7 +68,7 @@ jobs:
           rm -rf KernelSU-Next drivers/kernelsu
           git clone -b legacy-susfs-v2 https://github.com/sidex15/KernelSU-Next.git KernelSU-Next
           (cd KernelSU-Next && git fetch --tags || true)
-          ln -s ../KernelSU-Next/kernel drivers/kernelsu || cp -r KernelSU-Next/kernel drivers/kernelsu
+          cp -r KernelSU-Next/kernel drivers/kernelsu
 
       - name: Build Kernel
         id: build_kernel
@@ -98,23 +98,15 @@ jobs:
 
           mkdir -p out
 
+          MAKE_PARAMS="O=out ARCH=arm64 CC=$TC_CLANG/bin/clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=$TC_GCC64/bin/aarch64-linux-android- CROSS_COMPILE_ARM32=$TC_GCC32/bin/arm-linux-androideabi- AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip"
+
           # 1. Defconfig
           echo "=== Generating Defconfig ==="
-          make O=out ARCH=arm64 alioth_defconfig
+          make $MAKE_PARAMS alioth_defconfig
 
           # 2. Compile Kernel Image & DTBs
           echo "=== Compiling Kernel & DTBs ==="
-          make -j$(nproc --all) O=out \
-            ARCH=arm64 \
-            CC="$TC_CLANG/bin/clang" \
-            CLANG_TRIPLE="aarch64-linux-gnu-" \
-            CROSS_COMPILE="$TC_GCC64/bin/aarch64-linux-android-" \
-            CROSS_COMPILE_ARM32="$TC_GCC32/bin/arm-linux-androideabi-" \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
+          make -j$(nproc --all) $MAKE_PARAMS \
             CONFIG_DEBUG_SECTION_MISMATCH=y \
             CONFIG_BUILD_ARM64_DT_OVERLAY=y \
             Image dtbs 2>&1 | tee build.log
