@@ -108,6 +108,22 @@ static inline void susfs_set_current_proc_su_not_allowed(void) {
 	set_ti_thread_flag(&current->thread_info, TIF_PROC_SU_NOT_ALLOWED);
 }
 
+#ifndef TIF_PROC_UMOUNTED
+#define TIF_PROC_UMOUNTED 33
+#endif
+
+static inline bool susfs_is_current_proc_umounted(void) {
+	return test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
+}
+
+static inline void susfs_set_current_proc_umounted(void) {
+	set_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
+}
+
+static inline bool susfs_is_current_proc_umounted_app(void) {
+	return test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
+}
+
 static inline bool susfs_starts_with(const char *str, const char *prefix) {
     while (*prefix) {
         if (*str++ != *prefix++)
