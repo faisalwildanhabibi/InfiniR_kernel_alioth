@@ -182,6 +182,10 @@ int susfs_get_sus_su_working_mode(void);
 int susfs_sus_su(struct st_sus_su* __user user_info);
 #endif
 /* susfs_init */
+struct kstat;
+struct seq_file;
+struct filename;
+void susfs_start_sdcard_monitor_fn(void);
 void susfs_init(void);
 
 #endif
