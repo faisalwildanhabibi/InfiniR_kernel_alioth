@@ -1,0 +1,210 @@
+name: Build Alioth Kernel (KernelSU-Next & SuSFS)
+
+on:
+  push:
+    branches: [ "*" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "*" ]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Publish as GitHub Release'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: Build Kernel for Poco F3 (alioth)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Environment & Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc \
+            bison \
+            ca-certificates \
+            curl \
+            flex \
+            gcc \
+            g++ \
+            gcc-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi \
+            git \
+            libelf-dev \
+            libssl-dev \
+            make \
+            openssl \
+            python3 \
+            python-is-python3 \
+            zip \
+            unzip \
+            tar \
+            cpio \
+            lz4 \
+            libncurses5 \
+            libtinfo5 || true
+          
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 || true
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 || true
+
+      - name: Download Toolchains (Clang & Android GCC 4.9)
+        run: |
+          mkdir -p toolchain
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain/clang
+          git clone --depth=1 -b lineage-18.1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 toolchain/gcc64
+          git clone --depth=1 -b lineage-18.1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 toolchain/gcc32
+
+      - name: Prepare Drivers & Symlinks
+        run: |
+          rm -rf KernelSU-Next drivers/kernelsu
+          git clone -b legacy-susfs-v2 https://github.com/sidex15/KernelSU-Next.git KernelSU-Next
+          (cd KernelSU-Next && git fetch --tags || true)
+          cp -r KernelSU-Next/kernel drivers/kernelsu
+
+      - name: Build Kernel
+        id: build_kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export KBUILD_BUILD_USER="builder"
+          export KBUILD_BUILD_HOST="c5-miui-ota-bd176.bj"
+          
+          TC_CLANG="$(pwd)/toolchain/clang"
+          TC_GCC64="$(pwd)/toolchain/gcc64"
+          TC_GCC32="$(pwd)/toolchain/gcc32"
+          
+          export PATH="$TC_CLANG/bin:$TC_GCC64/bin:$TC_GCC32/bin:$PATH"
+          export LD_LIBRARY_PATH="$TC_CLANG/lib64:$LD_LIBRARY_PATH"
+          
+          echo "=== Verifying Toolchains ==="
+          clang -v
+          $TC_GCC64/bin/aarch64-linux-android-as -v
+          $TC_GCC32/bin/arm-linux-androideabi-as -v
+          
+          # Workaround yylloc in dtc if needed
+          YYLL1="scripts/dtc/dtc-lexer.lex.c_shipped"
+          YYLL2="scripts/dtc/dtc-lexer.l"
+          [ -f "$YYLL1" ] && sed -i "s/extern YYLTYPE yylloc/YYLTYPE yylloc/g;s/YYLTYPE yylloc/extern YYLTYPE yylloc/g" "$YYLL1"
+          [ -f "$YYLL2" ] && sed -i "s/extern YYLTYPE yylloc/YYLTYPE yylloc/g;s/YYLTYPE yylloc/extern YYLTYPE yylloc/g" "$YYLL2"
+
+          mkdir -p out
+
+          MAKE_PARAMS="O=out ARCH=arm64 CC=$TC_CLANG/bin/clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=$TC_GCC64/bin/aarch64-linux-android- CROSS_COMPILE_ARM32=$TC_GCC32/bin/arm-linux-androideabi- AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip"
+
+          # 1. Defconfig
+          echo "=== Generating Defconfig ==="
+          make $MAKE_PARAMS alioth_defconfig
+
+          # 2. Compile Kernel Image & DTBs
+          echo "=== Compiling Kernel & DTBs ==="
+          make -j$(nproc --all) $MAKE_PARAMS \
+            CONFIG_DEBUG_SECTION_MISMATCH=y \
+            CONFIG_BUILD_ARM64_DT_OVERLAY=y \
+            Image dtbs 2>&1 | tee build.log
+          BUILD_STATUS=${PIPESTATUS[0]}
+
+          # 3. Post-build DTB / DTBO Generation
+          if compgen -G "out/arch/arm64/boot/dts/vendor/qcom/*.dtbo" > /dev/null; then
+            echo "=== Generating dtbo.img ==="
+            python3 scripts/mkdtboimg.py create out/arch/arm64/boot/dtbo.img --page_size=4096 out/arch/arm64/boot/dts/vendor/qcom/*.dtbo || true
+          fi
+
+          if compgen -G "out/arch/arm64/boot/dts/vendor/qcom/*.dtb" > /dev/null; then
+            echo "=== Generating concatenated dtb ==="
+            cat out/arch/arm64/boot/dts/vendor/qcom/*.dtb > out/arch/arm64/boot/dtb
+          fi
+
+          # Check Output
+          if [ $BUILD_STATUS -ne 0 ] || { [ ! -f "out/arch/arm64/boot/Image.gz-dtb" ] && [ ! -f "out/arch/arm64/boot/Image.gz" ] && [ ! -f "out/arch/arm64/boot/Image" ]; }; then
+            echo "::error::Kernel compilation failed with status $BUILD_STATUS!"
+            echo "### Kernel Build Failure Summary" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            tail -n 250 build.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "==== LAST 250 LINES OF BUILD LOG ===="
+            tail -n 250 build.log
+            exit 1
+          fi
+
+      - name: Upload Build Log on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-failure-log
+          path: build.log
+
+      - name: Package AnyKernel3 Zip
+        id: package_ak3
+        run: |
+          AK3_DIR="AnyKernel3"
+          if [ ! -d "$AK3_DIR" ]; then
+            git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git $AK3_DIR
+          fi
+          
+          # Clean leftovers
+          rm -rf $AK3_DIR/Image* $AK3_DIR/dtb* $AK3_DIR/dt* $AK3_DIR/*.zip
+          
+          # Copy kernel image
+          if [ -f "out/arch/arm64/boot/Image.gz-dtb" ]; then
+            cp out/arch/arm64/boot/Image.gz-dtb $AK3_DIR/Image.gz-dtb
+          elif [ -f "out/arch/arm64/boot/Image.gz" ]; then
+            cp out/arch/arm64/boot/Image.gz $AK3_DIR/Image.gz
+          elif [ -f "out/arch/arm64/boot/Image" ]; then
+            cp out/arch/arm64/boot/Image $AK3_DIR/Image
+          fi
+          
+          # Copy DTBO
+          if [ -f "out/arch/arm64/boot/dtbo.img" ]; then
+            cp out/arch/arm64/boot/dtbo.img $AK3_DIR/dtbo.img
+          fi
+
+          # Copy DTB
+          if [ -f "out/arch/arm64/boot/dtb" ]; then
+            cp out/arch/arm64/boot/dtb $AK3_DIR/dtb
+            cp out/arch/arm64/boot/dtb $AK3_DIR/dt.img
+          elif compgen -G "out/arch/arm64/boot/dts/vendor/qcom/*.dtb" > /dev/null; then
+            cat out/arch/arm64/boot/dts/vendor/qcom/*.dtb > $AK3_DIR/dtb
+            cat out/arch/arm64/boot/dts/vendor/qcom/*.dtb > $AK3_DIR/dt.img
+          fi
+
+          DATE_STR=$(date +'%Y%m%d_%H%M%S')
+          ZIP_NAME="InfiniR-Alioth-crDroid11-A15-KSUN-SuSFS-${DATE_STR}.zip"
+          
+          cd $AK3_DIR
+          zip -r9 "../$ZIP_NAME" * -x .git README.md *placeholder
+          cd ..
+          
+          echo "ZIP_FILE=$ZIP_NAME" >> $GITHUB_OUTPUT
+          echo "ZIP_PATH=$(pwd)/$ZIP_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload Kernel Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package_ak3.outputs.ZIP_FILE }}
+          path: ${{ steps.package_ak3.outputs.ZIP_PATH }}
+          retention-days: 14
+
+      - name: Create GitHub Release
+        if: ${{ github.event.inputs.release == 'true' || startsWith(github.ref, 'refs/tags/v') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.package_ak3.outputs.ZIP_PATH }}
+          name: Release ${{ steps.package_ak3.outputs.ZIP_FILE }}
+          tag_name: ${{ github.ref_name }}
+          body: |
+            ### InfiniR Kernel for Poco F3 (alioth)
+            - **Target OS**: crDroid 11.17 / Android 15
+            - **KernelSU-Next**: Latest Non-GKI Legacy Driver
+            - **SuSFS**: Full Anti-Detection Mode
+            - **Identity**: OEM Clean Fingerprint & Masking
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
