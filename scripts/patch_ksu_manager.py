@@ -101,7 +101,7 @@ def main():
         with open(supercall_c, "w", encoding="utf-8") as f:
             f.write(sc_code)
 
-    # 4. Patch APK signature verification in apk_sign.c (Fixes Manager detection on Android 15)
+    # 4. Patch APK signature verification in apk_sign.c (Fixes Manager detection on Android 15 while keeping upstream hash)
     apk_sign_c = os.path.join(ksu_dir, "kernel", "manager", "apk_sign.c")
     if os.path.exists(apk_sign_c):
         with open(apk_sign_c, "r", encoding="utf-8", errors="ignore") as f:
@@ -135,145 +135,12 @@ def main():
             code = code.replace(old_v1_check, new_v1_check)
             print(f"[OK] Removed strict v1 signature rejection in {apk_sign_c}")
 
-        # C. Support multiple Manager keys (Next 1.1.1/3.3.0 + Official KernelSU + Testkeys)
+        # C. Allow flexible certificate block length for upstream expected_sha256
         old_block_cond = "if (*size4 == expected_size) {"
         new_block_cond = "if (*size4 > 0 && *size4 <= 1024) {"
         if old_block_cond in code:
             code = code.replace(old_block_cond, new_block_cond, 1)
-
-        old_match = """\t\tif (strcmp(expected_sha256, hash_str) == 0) {
-\t\t\treturn true;
-\t\t}"""
-
-        new_match = """\t\t// 1. KernelSU-Next official manager key
-\t\tif (strcmp("79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7", hash_str) == 0)
-\t\t\treturn true;
-\t\t// 2. KernelSU official manager key (weishu)
-\t\tif (strcmp("e848cf14ff57d549a099a4c2d431c34a413d5267d32c54ee9ee94f997637db91", hash_str) == 0)
-\t\t\treturn true;
-\t\t// 3. Android / KernelSU testkey
-\t\tif (strcmp("c92257d0e408803ad73a87588b9c8b73f76da0e50e82c50a16c4983a48e7da47", hash_str) == 0)
-\t\t\treturn true;
-\t\t// 4. Default expected manager hash
-\t\tif (expected_sha256 && strcmp(expected_sha256, hash_str) == 0)
-\t\t\treturn true;"""
-
-        if old_match in code:
-            code = code.replace(old_match, new_match, 1)
-            print(f"[OK] Added multi-key Manager support in {apk_sign_c}")
-
-        # D. Enhance get_pkg_from_apk_path and is_manager_apk for Android 15 directory structures
-        old_get_pkg = """int get_pkg_from_apk_path(char *pkg, const char *path)
-{
-	int len = strlen(path);
-	if (len >= KSU_MAX_PACKAGE_NAME || len < 1)
-		return -1;
-
-	const char *last_slash = NULL;
-	const char *second_last_slash = NULL;
-
-	int i;
-	for (i = len - 1; i >= 0; i--) {
-		if (path[i] == '/') {
-			if (!last_slash) {
-				last_slash = &path[i];
-			} else {
-				second_last_slash = &path[i];
-				break;
-			}
-		}
-	}
-
-	if (!last_slash || !second_last_slash)
-		return -1;
-
-	const char *last_hyphen = strchr(second_last_slash, '-');
-	if (!last_hyphen || last_hyphen > last_slash)
-		return -1;
-
-	int pkg_len = last_hyphen - second_last_slash - 1;
-	if (pkg_len >= KSU_MAX_PACKAGE_NAME || pkg_len <= 0)
-		return -1;
-
-	// Copying the package name
-	memcpy(pkg, second_last_slash + 1, pkg_len);
-	pkg[pkg_len] = '\\0';
-
-	return 0;
-}
-
-bool is_manager_apk(char *path)
-{
-#ifdef KSU_MANAGER_PACKAGE
-	char pkg[KSU_MAX_PACKAGE_NAME];
-	if (get_pkg_from_apk_path(pkg, path) < 0) {
-		pr_err("Failed to get package name from apk path: %s\\n", path);
-		return false;
-	}
-
-	// pkg is `<real package>`
-	if (strncmp(pkg, KSU_MANAGER_PACKAGE, sizeof(KSU_MANAGER_PACKAGE))) {
-		return false;
-	}
-#endif
-	return check_v2_signature(path, EXPECTED_MANAGER_SIZE, EXPECTED_MANAGER_HASH);
-}"""
-
-        new_get_pkg = """int get_pkg_from_apk_path(char *pkg, const char *path)
-{
-	int len = strlen(path);
-	if (len >= 512 || len < 1)
-		return -1;
-
-	const char *last_slash = strrchr(path, '/');
-	if (!last_slash)
-		return -1;
-
-	const char *second_last_slash = NULL;
-	const char *p;
-	for (p = last_slash - 1; p >= path; p--) {
-		if (*p == '/') {
-			second_last_slash = p;
-			break;
-		}
-	}
-	if (!second_last_slash)
-		return -1;
-
-	int dir_len = last_slash - (second_last_slash + 1);
-	if (dir_len <= 0 || dir_len >= KSU_MAX_PACKAGE_NAME)
-		return -1;
-
-	char dir_name[KSU_MAX_PACKAGE_NAME];
-	memcpy(dir_name, second_last_slash + 1, dir_len);
-	dir_name[dir_len] = '\\0';
-
-	char *hyphen = strrchr(dir_name, '-');
-	if (hyphen && hyphen != dir_name) {
-		*hyphen = '\\0';
-	}
-
-	strscpy(pkg, dir_name, KSU_MAX_PACKAGE_NAME);
-	return 0;
-}
-
-bool is_manager_apk(char *path)
-{
-	char pkg[KSU_MAX_PACKAGE_NAME];
-	if (get_pkg_from_apk_path(pkg, path) == 0) {
-		if (strcmp(pkg, "io.github.nekoproject.ksun") == 0 ||
-		    strcmp(pkg, "me.weishu.kernelsu") == 0 ||
-		    strcmp(pkg, "com.rifsxd.ksunext") == 0 ||
-		    strcmp(pkg, "com.sukernel") == 0) {
-			pr_info("Found manager apk by package name: %s\\n", pkg);
-			return true;
-		}
-	}
-	return check_v2_signature(path, EXPECTED_MANAGER_SIZE, EXPECTED_MANAGER_HASH);
-}"""
-        if old_get_pkg in code:
-            code = code.replace(old_get_pkg, new_get_pkg)
-            print(f"[OK] Enhanced package name & apk detection in {apk_sign_c}")
+            print(f"[OK] Enabled flexible cert block length in {apk_sign_c}")
 
         with open(apk_sign_c, "w", encoding="utf-8") as f:
             f.write(code)
