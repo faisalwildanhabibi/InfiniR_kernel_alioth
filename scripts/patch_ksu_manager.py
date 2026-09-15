@@ -142,8 +142,144 @@ def main():
             code = code.replace(old_block_cond, new_block_cond, 1)
             print(f"[OK] Enabled flexible cert block length in {apk_sign_c}")
 
+        # D. Support official KernelSU-Next, official KernelSU, and testkey manager signatures
+        old_match = """\t\tif (strcmp(expected_sha256, hash_str) == 0) {
+\t\t\treturn true;
+\t\t}"""
+
+        new_match = """\t\tif (strcmp("79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7", hash_str) == 0 ||
+\t\t    strcmp("e848cf14ff57d549a099a4c2d431c34a413d5267d32c54ee9ee94f997637db91", hash_str) == 0 ||
+\t\t    strcmp("c92257d0e408803ad73a87588b9c8b73f76da0e50e82c50a16c4983a48e7da47", hash_str) == 0 ||
+\t\t    (expected_sha256 && strcmp(expected_sha256, hash_str) == 0)) {
+\t\t\treturn true;
+\t\t}"""
+        if old_match in code:
+            code = code.replace(old_match, new_match, 1)
+            print(f"[OK] Added multi-signature manager support in {apk_sign_c}")
+
         with open(apk_sign_c, "w", encoding="utf-8") as f:
             f.write(code)
+
+        # E. Path length safe for get_pkg_from_apk_path
+        patch_file(apk_sign_c,
+                   "if (len >= KSU_MAX_PACKAGE_NAME || len < 1)",
+                   "if (len >= 512 || len < 1)")
+
+    # 5. Patch Kbuild to ensure valid KSU_VERSION and KSU_VERSION_TAG
+    kbuild_file = os.path.join(ksu_dir, "kernel", "Kbuild")
+    if os.path.exists(kbuild_file):
+        with open(kbuild_file, "r", encoding="utf-8", errors="ignore") as f:
+            kb_code = f.read()
+
+        old_kbuild_calc = '''# Calculate version if git version is available
+ifdef KSU_GIT_VERSION_VALID
+# ksu_version: major * 30000 + git version for historical reasons
+$(eval KSU_VERSION=$(shell expr 30000 + $(KSU_GIT_VERSION) + 200))
+$(info -- KernelSU-Next version: $(KSU_VERSION))
+ccflags-y += -DKSU_VERSION=$(KSU_VERSION)
+else
+# If there is no .git directory, use default version
+$(warning "KSU_GIT_VERSION not defined! It is better to make KernelSU-Next a git repository!")
+KSU_VERSION_FALLBACK := 1
+$(info -- KernelSU-Next version fallback: $(KSU_VERSION_FALLBACK))
+ccflags-y += -DKSU_VERSION=$(KSU_VERSION_FALLBACK)
+endif
+
+ifdef KSU_GIT_VERSION_VALID
+$(eval KSU_VERSION_TAG=$(KSU_GIT_TAG))
+$(info -- KernelSU-Next tag: $(KSU_VERSION_TAG))
+ccflags-y += -DKSU_VERSION_TAG=\\"$(KSU_VERSION_TAG)\\"
+else
+$(warning "KSU_VERSION_TAG not defined! It is better to make KernelSU-Next a git submodule!")
+KSU_VERSION_TAG_FALLBACK := v0.0.1
+$(info -- KernelSU-Next tag fallback: $(KSU_VERSION_TAG_FALLBACK))
+ccflags-y += -DKSU_VERSION_TAG=\\"$(KSU_VERSION_TAG_FALLBACK)\\"
+endif'''
+
+        new_kbuild_calc = '''# Calculate version if git version is available
+ifndef KSU_GIT_VERSION
+KSU_GIT_VERSION := 12797
+endif
+ifndef KSU_VERSION_TAG
+KSU_VERSION_TAG := v1.0.9
+endif
+$(eval KSU_VERSION=$(shell expr 30000 + $(KSU_GIT_VERSION) + 200))
+$(info -- KernelSU-Next version: $(KSU_VERSION))
+ccflags-y += -DKSU_VERSION=$(KSU_VERSION)
+$(info -- KernelSU-Next tag: $(KSU_VERSION_TAG))
+ccflags-y += -DKSU_VERSION_TAG=\\"$(KSU_VERSION_TAG)\\"'''
+
+        if old_kbuild_calc in kb_code:
+            kb_code = kb_code.replace(old_kbuild_calc, new_kbuild_calc)
+            with open(kbuild_file, "w", encoding="utf-8") as f:
+                f.write(kb_code)
+            print(f"[OK] Patched Kbuild version and tag calculations in {kbuild_file}")
+
+    # 6. Patch core/init.c to initialize observer for built-in kernel mode
+    init_c = os.path.join(ksu_dir, "kernel", "core", "init.c")
+    if os.path.exists(init_c):
+        with open(init_c, "r", encoding="utf-8", errors="ignore") as f:
+            init_code = f.read()
+        old_init_tail = """\t\tksu_ksud_init();
+
+\t\tksu_file_wrapper_init();
+\t}"""
+        new_init_tail = """\t\tksu_ksud_init();
+
+\t\tksu_file_wrapper_init();
+
+\t\tksu_observer_init();
+\t}"""
+        if old_init_tail in init_code:
+            init_code = init_code.replace(old_init_tail, new_init_tail)
+            with open(init_c, "w", encoding="utf-8") as f:
+                f.write(init_code)
+            print(f"[OK] Added ksu_observer_init to built-in init in {init_c}")
+
+    # 7. Patch hook/lsm_hooks.c to allow throne tracking during boot
+    lsm_hooks_c = os.path.join(ksu_dir, "kernel", "hook", "lsm_hooks.c")
+    if os.path.exists(lsm_hooks_c):
+        patch_file(lsm_hooks_c,
+                   "if (!ksu_boot_completed) {\n\t\treturn 0;\n\t}",
+                   "// allow throne tracking during system server initialization\n\t(void)ksu_boot_completed;")
+
+    # 8. Patch hook/setuid_hook.c to disable seccomp for uncrowned app processes
+    setuid_c = os.path.join(ksu_dir, "kernel", "hook", "setuid_hook.c")
+    if os.path.exists(setuid_c):
+        with open(setuid_c, "r", encoding="utf-8", errors="ignore") as f:
+            setuid_code = f.read()
+
+        old_manager_check = """    if (unlikely(is_uid_manager(new_uid))) {
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+        if (current->seccomp.mode == SECCOMP_MODE_FILTER && current->seccomp.filter) {
+            ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
+        }
+#else
+		disable_seccomp(current);
+#endif"""
+
+        new_manager_check = """    if (unlikely(is_uid_manager(new_uid) || !ksu_is_manager_appid_valid())) {
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+        if (current->seccomp.mode == SECCOMP_MODE_FILTER && current->seccomp.filter) {
+            ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
+        }
+#else
+		disable_seccomp(current);
+#endif"""
+        if old_manager_check in setuid_code:
+            setuid_code = setuid_code.replace(old_manager_check, new_manager_check)
+            with open(setuid_c, "w", encoding="utf-8") as f:
+                f.write(setuid_code)
+            print(f"[OK] Patched uncrowned manager seccomp bypass in {setuid_c}")
+
+    # 9. Patch dispatch.c to set KSU_GET_INFO_FLAG_MANAGER for uncrowned manager
+    dispatch_c = os.path.join(ksu_dir, "kernel", "supercall", "dispatch.c")
+    if os.path.exists(dispatch_c):
+        patch_file(dispatch_c,
+                   "if (is_manager()) {\n\t\tcmd.flags |= KSU_GET_INFO_FLAG_MANAGER;\n\t}",
+                   "if (is_manager() || !ksu_is_manager_appid_valid()) {\n\t\tcmd.flags |= KSU_GET_INFO_FLAG_MANAGER;\n\t}")
 
 if __name__ == "__main__":
     main()
