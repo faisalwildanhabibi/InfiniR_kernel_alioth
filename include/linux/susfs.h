@@ -189,6 +189,11 @@ struct st_sus_su {
 void susfs_add_sus_path(void __user **user_info);
 void susfs_add_sus_path_loop(void __user **user_info);
 int susfs_sus_ino_for_filldir64(unsigned long ino);
+bool susfs_is_inode_sus_path(struct inode *inode);
+bool susfs_is_sus_android_data_d_name_found(const char *d_name);
+bool susfs_is_sus_sdcard_d_name_found(const char *d_name);
+bool susfs_is_base_dentry_android_data_dir(struct dentry* base);
+bool susfs_is_base_dentry_sdcard_dir(struct dentry* base);
 #endif
 
 /* sus_mount */

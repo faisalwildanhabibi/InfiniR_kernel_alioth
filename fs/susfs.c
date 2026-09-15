@@ -138,6 +138,36 @@ int susfs_sus_ino_for_filldir64(unsigned long ino) {
 	}
 	return 0;
 }
+
+static inline bool is_i_uid_not_allowed(uid_t i_uid) {
+	return (likely(susfs_is_current_non_root_user_app_proc()) &&
+		unlikely(current_uid().val != i_uid));
+}
+
+bool susfs_is_base_dentry_android_data_dir(struct dentry* base) {
+	return (base && !IS_ERR(base) && base->d_inode && (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR));
+}
+
+bool susfs_is_base_dentry_sdcard_dir(struct dentry* base) {
+	return (base && !IS_ERR(base) && base->d_inode && (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR));
+}
+
+bool susfs_is_sus_android_data_d_name_found(const char *d_name) {
+	return false;
+}
+
+bool susfs_is_sus_sdcard_d_name_found(const char *d_name) {
+	return false;
+}
+
+bool susfs_is_inode_sus_path(struct inode *inode) {
+	if (unlikely(inode && inode->i_mapping && (inode->i_mapping->flags & BIT_SUS_PATH) &&
+		is_i_uid_not_allowed(inode->i_uid.val)))
+	{
+		return true;
+	}
+	return false;
+}
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
 /* sus_mount */
