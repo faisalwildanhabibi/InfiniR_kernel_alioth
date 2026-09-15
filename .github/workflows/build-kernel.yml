@@ -81,8 +81,8 @@ jobs:
           cp -r KernelSU-Next/uapi drivers/kernelsu/uapi
           
           cd KernelSU-Next
-          KSU_VER=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.9")
-          KSU_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "12797")
+          KSU_VER=$(git describe --tags --abbrev=0 2>/dev/null || git describe --tags --always 2>/dev/null)
+          KSU_COUNT=$(git rev-list --count HEAD 2>/dev/null)
           cd ..
           echo "KSU_VERSION_TAG=$KSU_VER" >> $GITHUB_ENV
           echo "KSU_GIT_VERSION=$KSU_COUNT" >> $GITHUB_ENV

@@ -165,7 +165,7 @@ def main():
                    "if (len >= KSU_MAX_PACKAGE_NAME || len < 1)",
                    "if (len >= 512 || len < 1)")
 
-    # 5. Patch Kbuild to ensure valid KSU_VERSION and KSU_VERSION_TAG
+    # 5. Patch Kbuild to dynamically resolve KSU_GIT_VERSION and KSU_VERSION_TAG from environment or git
     kbuild_file = os.path.join(ksu_dir, "kernel", "Kbuild")
     if os.path.exists(kbuild_file):
         with open(kbuild_file, "r", encoding="utf-8", errors="ignore") as f:
@@ -196,24 +196,43 @@ $(info -- KernelSU-Next tag fallback: $(KSU_VERSION_TAG_FALLBACK))
 ccflags-y += -DKSU_VERSION_TAG=\\"$(KSU_VERSION_TAG_FALLBACK)\\"
 endif'''
 
-        new_kbuild_calc = '''# Calculate version if git version is available
-ifndef KSU_GIT_VERSION
-KSU_GIT_VERSION := 12797
+        new_kbuild_calc = '''# Dynamically resolve version from environment or git
+ifdef KSU_GIT_VERSION
+KSU_GIT_VERSION_VALID := 1
+KSU_GIT_TAG := $(KSU_VERSION_TAG)
 endif
-ifndef KSU_VERSION_TAG
-KSU_VERSION_TAG := v1.0.9
-endif
+
+ifdef KSU_GIT_VERSION_VALID
+# ksu_version: major * 30000 + git version for historical reasons
 $(eval KSU_VERSION=$(shell expr 30000 + $(KSU_GIT_VERSION) + 200))
 $(info -- KernelSU-Next version: $(KSU_VERSION))
 ccflags-y += -DKSU_VERSION=$(KSU_VERSION)
+ifdef KSU_VERSION_TAG
 $(info -- KernelSU-Next tag: $(KSU_VERSION_TAG))
-ccflags-y += -DKSU_VERSION_TAG=\\"$(KSU_VERSION_TAG)\\"'''
+ccflags-y += -DKSU_VERSION_TAG=\\"$(KSU_VERSION_TAG)\\"
+else
+$(eval KSU_VERSION_TAG=$(KSU_GIT_TAG))
+$(info -- KernelSU-Next tag: $(KSU_VERSION_TAG))
+ccflags-y += -DKSU_VERSION_TAG=\\"$(KSU_VERSION_TAG)\\"
+endif
+else
+# If no git info available, try to query git directly
+KSU_DETECTED_VER := $(shell cd $(KSU_KERNEL_DIR) && git rev-list --count HEAD 2>/dev/null)
+KSU_DETECTED_TAG := $(shell cd $(KSU_KERNEL_DIR) && git describe --tags --abbrev=0 2>/dev/null)
+ifneq ($(KSU_DETECTED_VER),)
+$(eval KSU_VERSION=$(shell expr 30000 + $(KSU_DETECTED_VER) + 200))
+$(info -- KernelSU-Next version: $(KSU_VERSION))
+ccflags-y += -DKSU_VERSION=$(KSU_VERSION)
+$(info -- KernelSU-Next tag: $(KSU_DETECTED_TAG))
+ccflags-y += -DKSU_VERSION_TAG=\\"$(KSU_DETECTED_TAG)\\"
+endif
+endif'''
 
         if old_kbuild_calc in kb_code:
             kb_code = kb_code.replace(old_kbuild_calc, new_kbuild_calc)
             with open(kbuild_file, "w", encoding="utf-8") as f:
                 f.write(kb_code)
-            print(f"[OK] Patched Kbuild version and tag calculations in {kbuild_file}")
+            print(f"[OK] Patched Kbuild dynamic version and tag calculations in {kbuild_file}")
 
     # 6. Patch core/init.c to initialize observer for built-in kernel mode
     init_c = os.path.join(ksu_dir, "kernel", "core", "init.c")
