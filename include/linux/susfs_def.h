@@ -52,6 +52,10 @@
 #define DEFAULT_SUS_MNT_GROUP_ID 1000
 
 #define MAGIC_MOUNT_WORKDIR "/debug_ramdisk/workdir"
+#define DATA_ADB_UMOUNT_FOR_ZYGOTE_SYSTEM_PROCESS "/data/adb/susfs_umount_for_zygote_system_process"
+#define DATA_ADB_NO_AUTO_ADD_SUS_BIND_MOUNT "/data/adb/susfs_no_auto_add_sus_bind_mount"
+#define DATA_ADB_NO_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT "/data/adb/susfs_no_auto_add_sus_ksu_default_mount"
+#define DATA_ADB_NO_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT "/data/adb/susfs_no_auto_add_try_umount_for_bind_mount"
 
 #ifndef FUSE_SUPER_MAGIC
 #define FUSE_SUPER_MAGIC 0x65735546
@@ -96,6 +100,7 @@
 
 #define ND_STATE_LOOKUP_LAST 32
 #define ND_STATE_OPEN_LAST 64
+#define ND_STATE_LAST_SDCARD_SUS_PATH 128
 #define ND_FLAGS_LOOKUP_LAST 0x2000000
 
 static inline bool susfs_is_current_non_root_user_app_proc(void) {
@@ -115,19 +120,19 @@ static inline void susfs_set_current_proc_su_not_allowed(void) {
 }
 
 static inline bool susfs_is_current_proc_umounted(void) {
-	return test_thread_flag(TIF_PROC_UMOUNTED);
+	return test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
 }
 
 static inline void susfs_set_current_proc_umounted(void) {
-	set_thread_flag(TIF_PROC_UMOUNTED);
+	set_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
 }
 
 static inline void susfs_clear_current_proc_umounted(void) {
-	clear_thread_flag(TIF_PROC_UMOUNTED);
+	clear_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
 }
 
 static inline bool susfs_is_current_proc_umounted_app(void) {
-	return test_thread_flag(TIF_PROC_UMOUNTED) && current_uid().val >= 10000;
+	return test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED) && current_uid().val >= 10000;
 }
 
 #endif // #ifndef KSU_SUSFS_DEF_H
