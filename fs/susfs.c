@@ -684,7 +684,7 @@ void susfs_set_cmdline_or_bootconfig(void __user **user_info) {
 	spin_unlock(&susfs_spin_lock);
 	info->err = 0;
 out_copy_to_user:
-	if (copy_to_user(&((struct st_susfs_spoof_cmdline_or_bootconfig __user*)*user_info)->err, &info->err, sizeof(info.err))) {
+	if (copy_to_user(&((struct st_susfs_spoof_cmdline_or_bootconfig __user*)*user_info)->err, &info->err, sizeof(info->err))) {
 		info->err = -EFAULT;
 	}
 	kfree(info);
