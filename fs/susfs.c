@@ -72,6 +72,8 @@ static int susfs_update_sus_path_inode(char *target_pathname) {
 		spin_lock(&inode->i_lock);
 		inode->i_state |= INODE_STATE_SUS_PATH;
 		spin_unlock(&inode->i_lock);
+		if (inode->i_mapping)
+			set_bit(AS_FLAGS_SUS_PATH, &inode->i_mapping->flags);
 	}
 	path_put(&p);
 	return 0;
@@ -170,6 +172,8 @@ static void susfs_update_sus_mount_inode(char *target_pathname) {
 		spin_lock(&inode->i_lock);
 		inode->i_state |= INODE_STATE_SUS_MOUNT;
 		spin_unlock(&inode->i_lock);
+		if (inode->i_mapping)
+			set_bit(AS_FLAGS_SUS_MOUNT, &inode->i_mapping->flags);
 	}
 	path_put(&p);
 }
@@ -248,6 +252,8 @@ int susfs_auto_add_sus_bind_mount(const char *pathname, struct path *path_target
 		spin_lock(&inode->i_lock);
 		inode->i_state |= INODE_STATE_SUS_MOUNT;
 		spin_unlock(&inode->i_lock);
+		if (inode->i_mapping)
+			set_bit(AS_FLAGS_SUS_MOUNT, &inode->i_mapping->flags);
 	}
 	return 0;
 }
@@ -286,6 +292,8 @@ set_inode_sus_mount:
 		spin_lock(&inode->i_lock);
 		inode->i_state |= INODE_STATE_SUS_MOUNT;
 		spin_unlock(&inode->i_lock);
+		if (inode->i_mapping)
+			set_bit(AS_FLAGS_SUS_MOUNT, &inode->i_mapping->flags);
 	}
 out_path_put:
 	path_put(&path);
@@ -323,6 +331,8 @@ static int susfs_update_sus_kstat_inode(char *target_pathname) {
 		spin_lock(&inode->i_lock);
 		inode->i_state |= INODE_STATE_SUS_KSTAT;
 		spin_unlock(&inode->i_lock);
+		if (inode->i_mapping)
+			set_bit(AS_FLAGS_SUS_KSTAT, &inode->i_mapping->flags);
 	}
 	path_put(&p);
 	return 0;
@@ -674,7 +684,7 @@ void susfs_set_cmdline_or_bootconfig(void __user **user_info) {
 	spin_unlock(&susfs_spin_lock);
 	info->err = 0;
 out_copy_to_user:
-	if (copy_to_user(&((struct st_susfs_spoof_cmdline_or_bootconfig __user*)*user_info)->err, &info->err, sizeof(info->err))) {
+	if (copy_to_user(&((struct st_susfs_spoof_cmdline_or_bootconfig __user*)*user_info)->err, &info->err, sizeof(info.err))) {
 		info->err = -EFAULT;
 	}
 	kfree(info);
@@ -711,6 +721,8 @@ static int susfs_update_open_redirect_inode(struct st_susfs_open_redirect_hlist 
 	spin_lock(&inode_target->i_lock);
 	inode_target->i_state |= INODE_STATE_OPEN_REDIRECT;
 	spin_unlock(&inode_target->i_lock);
+	if (inode_target->i_mapping)
+		set_bit(AS_FLAGS_OPEN_REDIRECT, &inode_target->i_mapping->flags);
 
 out_path_put_target:
 	path_put(&path_target);
