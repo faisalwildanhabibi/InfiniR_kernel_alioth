@@ -305,7 +305,7 @@ def analyze_dtb_tables(dtb_bytes: bytes) -> Dict[str, Any]:
 
 
 def analyze_kernel_binary(decompressed: bytes) -> Dict[str, Any]:
-    """Inspects decompressed ARM64 kernel image, header magic, and Linux version banner."""
+    """Inspects decompressed ARM64 kernel image, header magic, Linux version banner, and KernelSU/SuSFS symbols."""
     info = {
         "size": len(decompressed),
         "sha256": hashlib.sha256(decompressed).hexdigest() if decompressed else "",
@@ -313,8 +313,13 @@ def analyze_kernel_binary(decompressed: bytes) -> Dict[str, Any]:
         "banner": "",
         "has_ksu": False,
         "has_susfs": False,
+        "has_ksu_next_manager_key": False,
+        "has_ksu_official_manager_key": False,
+        "has_ksu_reboot_supercall": False,
         "text_offset": None,
-        "image_size": None
+        "image_size": None,
+        "ksu_symbols": [],
+        "susfs_symbols": []
     }
     if len(decompressed) < 64:
         return info
@@ -337,6 +342,14 @@ def analyze_kernel_binary(decompressed: bytes) -> Dict[str, Any]:
         info["has_ksu"] = True
     if b"susfs" in decompressed or b"susfs_" in decompressed:
         info["has_susfs"] = True
+
+    # Check for manager key hashes in kernel string table
+    if b"79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7" in decompressed:
+        info["has_ksu_next_manager_key"] = True
+    if b"e848cf14ff57d549a099a4c2d431c34a413d5267d32c54ee9ee94f997637db91" in decompressed:
+        info["has_ksu_official_manager_key"] = True
+    if b"c92257d0e408803ad73a87588b9c8b73f76da0e50e82c50a16c4983a48e7da47" in decompressed:
+        info["has_ksu_testkey"] = True
 
     return info
 
@@ -652,7 +665,64 @@ def run_comprehensive_validation(target_zip: str, ref_zip: str) -> Dict[str, Any
                 report["warnings"].append("Could not extract Linux banner.")
 
             # ==========================================
-            # 5. DEVICE TREE & DTBO OVERLAY TABLES
+            # 5. ROOT & STEALTH ARCHITECTURE (KERNELSU & SUSFS)
+            # ==========================================
+            if target_kinfo["has_ksu"]:
+                report["checks"].append({
+                    "subsystem": "Root & Stealth Architecture",
+                    "name": "KernelSU Core Integration",
+                    "status": "PASS",
+                    "detail": "KernelSU-Next driver integrated in kernel image."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Root & Stealth Architecture",
+                    "name": "KernelSU Core Integration",
+                    "status": "FAIL",
+                    "detail": "KernelSU driver symbols missing from kernel image."
+                })
+                report["errors"].append("KernelSU missing from kernel image.")
+
+            if target_kinfo.get("has_ksu_next_manager_key") or target_kinfo.get("has_ksu_official_manager_key"):
+                keys_found = []
+                if target_kinfo.get("has_ksu_next_manager_key"):
+                    keys_found.append("Next 1.1.1/3.3.0")
+                if target_kinfo.get("has_ksu_official_manager_key"):
+                    keys_found.append("Official KernelSU")
+                if target_kinfo.get("has_ksu_testkey"):
+                    keys_found.append("Android Testkey")
+                report["checks"].append({
+                    "subsystem": "Root & Stealth Architecture",
+                    "name": "Manager Multi-Signature APK Verification",
+                    "status": "PASS",
+                    "detail": f"Multi-signature Manager validation embedded in kernel ({', '.join(keys_found)})."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Root & Stealth Architecture",
+                    "name": "Manager Multi-Signature APK Verification",
+                    "status": "WARN",
+                    "detail": "Standard custom manager signature validation in use."
+                })
+
+            if target_kinfo["has_susfs"]:
+                report["checks"].append({
+                    "subsystem": "Root & Stealth Architecture",
+                    "name": "SuSFS Stealth Engine Integration",
+                    "status": "PASS",
+                    "detail": "SuSFS filesystem overlay & spoofing engine active in kernel."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Root & Stealth Architecture",
+                    "name": "SuSFS Stealth Engine Integration",
+                    "status": "FAIL",
+                    "detail": "SuSFS filesystem symbols missing from kernel image."
+                })
+                report["errors"].append("SuSFS missing from kernel image.")
+
+            # ==========================================
+            # 6. DEVICE TREE & DTBO OVERLAY TABLES
             # ==========================================
             if target_dtb_info["has_fdt_magic"] and target_dtb_info["is_sm8250_kona"]:
                 dtb_length_match = (target_dtb_info["size"] == ref_dtb_info["size"])
