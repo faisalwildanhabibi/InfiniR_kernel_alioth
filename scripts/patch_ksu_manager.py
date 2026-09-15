@@ -23,7 +23,7 @@ def patch_file(path, old_str, new_str):
 def main():
     ksu_dir = sys.argv[1] if len(sys.argv) > 1 else "KernelSU-Next"
     
-    # 1. Patch SELinux uninitialized SID checks
+    # 1. Patch SELinux uninitialized SID checks (fixes early boot freeze)
     selinux_c = os.path.join(ksu_dir, "kernel", "selinux", "selinux.c")
     patch_file(selinux_c, 
                "return unlikely(current_sid() == susfs_zygote_sid);",
@@ -35,7 +35,7 @@ def main():
                "return unlikely(current_sid() == susfs_init_sid);",
                "return unlikely(susfs_init_sid && current_sid() == susfs_init_sid);")
 
-    # 2. Patch APK signature verification in apk_sign.c
+    # 2. Patch APK signature verification in apk_sign.c (fixes Manager detection on Android 15)
     apk_sign_c = os.path.join(ksu_dir, "kernel", "manager", "apk_sign.c")
     if os.path.exists(apk_sign_c):
         with open(apk_sign_c, "r", encoding="utf-8", errors="ignore") as f:
@@ -88,6 +88,21 @@ def main():
 
         with open(apk_sign_c, "w", encoding="utf-8") as f:
             f.write(code)
+
+    # 3. Patch sucompat.c to harden /system/xbin/su as well for full compatibility
+    sucompat_c = os.path.join(ksu_dir, "kernel", "feature", "sucompat.c")
+    if os.path.exists(sucompat_c):
+        with open(sucompat_c, "r", encoding="utf-8", errors="ignore") as f:
+            code = f.read()
+        
+        # Support both /system/bin/su and /system/xbin/su
+        old_check_su = "!memcmp(path, su, sizeof(su))"
+        new_check_su = "(!memcmp(path, su, sizeof(su)) || !strcmp(path, \"/system/xbin/su\"))"
+        if old_check_su in code and new_check_su not in code:
+            code = code.replace(old_check_su, new_check_su)
+            with open(sucompat_c, "w", encoding="utf-8") as f:
+                f.write(code)
+            print(f"[OK] Added multi-path su checking in {sucompat_c}")
 
 if __name__ == "__main__":
     main()
