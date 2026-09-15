@@ -124,23 +124,24 @@ jobs:
             CONFIG_BUILD_ARM64_DT_OVERLAY=y \
             KSU_GIT_VERSION="${KSU_GIT_VERSION}" \
             KSU_VERSION_TAG="${KSU_VERSION_TAG}" \
-            Image dtbs 2>&1 | tee build.log
+            Image.gz-dtb dtbs dtbo.img 2>&1 | tee build.log
           BUILD_STATUS=${PIPESTATUS[0]}
 
-          # 3. Post-build DTB / DTBO Generation
-          if compgen -G "out/arch/arm64/boot/dts/vendor/qcom/*.dtbo" > /dev/null; then
+          # 3. Post-build DTBO Generation fallback
+          if [ ! -f "out/arch/arm64/boot/dtbo.img" ] && compgen -G "out/arch/arm64/boot/dts/vendor/qcom/*.dtbo" > /dev/null; then
             echo "=== Generating dtbo.img ==="
             python3 scripts/mkdtboimg.py create out/arch/arm64/boot/dtbo.img --page_size=4096 out/arch/arm64/boot/dts/vendor/qcom/*.dtbo || true
           fi
 
-          if compgen -G "out/arch/arm64/boot/dts/vendor/qcom/*.dtb" > /dev/null; then
-            echo "=== Generating concatenated dtb ==="
-            cat out/arch/arm64/boot/dts/vendor/qcom/*.dtb > out/arch/arm64/boot/dtb
+          # 4. Appended DTB fallback if needed
+          if [ ! -f "out/arch/arm64/boot/Image.gz-dtb" ] && [ -f "out/arch/arm64/boot/Image.gz" ] && compgen -G "out/arch/arm64/boot/dts/vendor/qcom/*.dtb" > /dev/null; then
+            echo "=== Concatenating Image.gz-dtb ==="
+            cat out/arch/arm64/boot/Image.gz out/arch/arm64/boot/dts/vendor/qcom/*.dtb > out/arch/arm64/boot/Image.gz-dtb
           fi
 
           # Check Output
-          if [ $BUILD_STATUS -ne 0 ] || { [ ! -f "out/arch/arm64/boot/Image.gz-dtb" ] && [ ! -f "out/arch/arm64/boot/Image.gz" ] && [ ! -f "out/arch/arm64/boot/Image" ]; }; then
-            echo "::error::Kernel compilation failed with status $BUILD_STATUS!"
+          if [ $BUILD_STATUS -ne 0 ] || [ ! -f "out/arch/arm64/boot/Image.gz-dtb" ]; then
+            echo "::error::Kernel compilation failed or Image.gz-dtb missing!"
             echo "### Kernel Build Failure Summary" >> $GITHUB_STEP_SUMMARY
             echo '```text' >> $GITHUB_STEP_SUMMARY
             tail -n 250 build.log >> $GITHUB_STEP_SUMMARY
@@ -179,29 +180,70 @@ jobs:
           fi
           
           # Clean leftovers
-          rm -rf $AK3_DIR/Image* $AK3_DIR/dtb* $AK3_DIR/dt* $AK3_DIR/*.zip
+          rm -rf $AK3_DIR/Image* $AK3_DIR/dtb* $AK3_DIR/dt* $AK3_DIR/*.zip $AK3_DIR/modules
           
-          # Copy kernel image
+          # Write verified anykernel.sh for Alioth
+          cat << 'EOF' > $AK3_DIR/anykernel.sh
+# AnyKernel3 Ramdisk Mod Script
+# osm0sis @ xda-developers
+
+## AnyKernel setup
+# begin properties
+properties() { '
+kernel.string=InfiniR Kernel for Poco F3 (alioth)
+do.devicecheck=1
+do.modules=0
+do.systemless=1
+do.cleanup=1
+do.cleanuponabort=0
+device.name1=alioth
+device.name2=aliothin
+device.name3=
+device.name4=
+device.name5=
+supported.versions=
+'; } # end properties
+
+# shell variables
+block=/dev/block/bootdevice/by-name/boot;
+is_slot_device=1;
+ramdisk_compression=auto;
+
+
+## AnyKernel methods (DO NOT CHANGE)
+# import patching functions/variables - see for reference
+. tools/ak3-core.sh;
+
+
+## AnyKernel file attributes
+# set permissions/ownership for included ramdisk files
+set_perm_recursive 0 0 750 750 $ramdisk/*;
+
+
+## AnyKernel install
+dump_boot;
+
+# Begin Ramdisk Changes
+
+# migrate from /overlay to /overlay.d to enable SAR Magisk
+if [ -d $ramdisk/overlay ]; then
+  rm -rf $ramdisk/overlay;
+fi;
+
+write_boot;
+## end install
+EOF
+          
+          # Copy Image.gz-dtb
           if [ -f "out/arch/arm64/boot/Image.gz-dtb" ]; then
             cp out/arch/arm64/boot/Image.gz-dtb $AK3_DIR/Image.gz-dtb
-          elif [ -f "out/arch/arm64/boot/Image.gz" ]; then
-            cp out/arch/arm64/boot/Image.gz $AK3_DIR/Image.gz
-          elif [ -f "out/arch/arm64/boot/Image" ]; then
-            cp out/arch/arm64/boot/Image $AK3_DIR/Image
+          elif [ -f "out/arch/arm64/boot/Image.gz" ] && compgen -G "out/arch/arm64/boot/dts/vendor/qcom/*.dtb" > /dev/null; then
+            cat out/arch/arm64/boot/Image.gz out/arch/arm64/boot/dts/vendor/qcom/*.dtb > $AK3_DIR/Image.gz-dtb
           fi
           
           # Copy DTBO
           if [ -f "out/arch/arm64/boot/dtbo.img" ]; then
             cp out/arch/arm64/boot/dtbo.img $AK3_DIR/dtbo.img
-          fi
-
-          # Copy DTB
-          if [ -f "out/arch/arm64/boot/dtb" ]; then
-            cp out/arch/arm64/boot/dtb $AK3_DIR/dtb
-            cp out/arch/arm64/boot/dtb $AK3_DIR/dt.img
-          elif compgen -G "out/arch/arm64/boot/dts/vendor/qcom/*.dtb" > /dev/null; then
-            cat out/arch/arm64/boot/dts/vendor/qcom/*.dtb > $AK3_DIR/dtb
-            cat out/arch/arm64/boot/dts/vendor/qcom/*.dtb > $AK3_DIR/dt.img
           fi
 
           DATE_STR=$(date +'%Y%m%d_%H%M%S')
@@ -213,6 +255,11 @@ jobs:
           
           echo "ZIP_FILE=$ZIP_NAME" >> $GITHUB_OUTPUT
           echo "ZIP_PATH=$(pwd)/$ZIP_NAME" >> $GITHUB_OUTPUT
+
+      - name: Verify Kernel Zip Compatibility
+        run: |
+          python3 check_kernel_compatibility.py "${{ steps.package_ak3.outputs.ZIP_PATH }}" --markdown compatibility_report.md
+          cat compatibility_report.md >> $GITHUB_STEP_SUMMARY
 
       - name: Upload Kernel Artifact
         uses: actions/upload-artifact@v4
