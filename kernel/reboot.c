@@ -329,7 +329,9 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 	int ret = 0;
 
 #ifdef CONFIG_KSU_MANUAL_HOOK
-	ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
+	if (magic1 == 0xDEADBEEF || magic1 == 0x77616e67) {
+		return ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
+	}
 #endif
 
 	if (check_poweroff_charger_mode()){
