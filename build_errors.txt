@@ -1,0 +1,191 @@
+  CC      drivers/clk/qcom/clk-regmap-mux.o
+  CC      techpack/audio/dsp/codecs/evrc_in.o
+  CC      techpack/camera/drivers/cam_isp/isp_hw_mgr/isp_hw/vfe_hw/vfe_bus/cam_vfe_bus_ver3.o
+  CC      drivers/clk/qcom/clk-regmap-mux-div.o
+  CC      techpack/audio/dsp/codecs/g711alaw_in.o
+  CC      drivers/clk/qcom/reset.o
+  CC      fs/proc_namespace.o
+  CC      drivers/clk/qcom/clk-voter.o
+  CC      techpack/audio/dsp/codecs/g711mlaw_in.o
+In file included from ../fs/proc_namespace.c:16:
+../include/linux/susfs_def.h:113:83: error: implicit declaration of function 'current_uid' [-Werror,-Wimplicit-function-declaration]
+        return test_ti_thread_flag(&current->thread_info, TIF_NON_ROOT_USER_APP_PROC) && current_uid().val >= 10000;
+                                                                                         ^
+../include/linux/susfs_def.h:113:83: note: did you mean 'current_time'?
+../include/linux/fs.h:1586:26: note: 'current_time' declared here
+extern struct timespec64 current_time(struct inode *inode);
+                         ^
+In file included from ../fs/proc_namespace.c:16:
+../include/linux/susfs_def.h:113:96: error: member reference base type 'int' is not a structure or union
+        return test_ti_thread_flag(&current->thread_info, TIF_NON_ROOT_USER_APP_PROC) && current_uid().val >= 10000;
+                                                                                         ~~~~~~~~~~~~~^~~~
+2 errors generated.
+make[2]: *** [../scripts/Makefile.build:338: fs/proc_namespace.o] Error 1
+make[1]: *** [/home/runner/work/InfiniR_kernel_alioth/InfiniR_kernel_alioth/Makefile:1256: fs] Error 2
+make[1]: *** Waiting for unfinished jobs....
+  AR      drivers/clk/renesas/built-in.a
+  CC      drivers/clocksource/timer-of.o
+  CC      drivers/clk/qcom/clk-dummy.o
+  AR      techpack/camera/drivers/cam_isp/isp_hw_mgr/isp_hw/vfe_hw/vfe_bus/built-in.a
+  CC      techpack/camera/drivers/cam_isp/isp_hw_mgr/isp_hw/vfe_hw/vfe_top/cam_vfe_camif_lite_ver2.o
+  CC      techpack/audio/dsp/codecs/qcelp_in.o
+  CC      drivers/clocksource/timer-probe.o
+  CC      drivers/clk/qcom/clk-debug.o
+  CC      drivers/clocksource/arm_arch_timer.o
+  CC      techpack/camera/drivers/cam_isp/isp_hw_mgr/isp_hw/vfe_hw/vfe_top/cam_vfe_top.o
+  AR      techpack/audio/dsp/codecs/built-in.a
+  CC      techpack/audio/dsp/msm-audio-event-notify.o
+  CC      drivers/clk/qcom/gdsc-regulator.o
+  CC      techpack/audio/dsp/audio_calibration.o
+  CC      techpack/camera/drivers/cam_isp/isp_hw_mgr/isp_hw/vfe_hw/vfe_top/cam_vfe_top_common.o
+  CC      drivers/clocksource/dummy_timer.o
+  CC      drivers/clk/qcom/gdsc.o
+  CC      techpack/camera/drivers/cam_isp/isp_hw_mgr/isp_hw/vfe_hw/vfe_top/cam_vfe_top_ver3.o
+  AR      drivers/clocksource/built-in.a
+  CC      techpack/audio/dsp/audio_cal_utils.o
+  CC      techpack/audio/ipc/apr.o
+  CC      drivers/clk/qcom/camcc-kona.o
+  CC      techpack/camera/drivers/cam_isp/isp_hw_mgr/isp_hw/vfe_hw/vfe_top/cam_vfe_top_ver2.o
+  CC      techpack/audio/dsp/q6adm.o
+  CC      techpack/audio/ipc/apr_v2.o
+  CC      drivers/clk/qcom/clk-aop-qmp.o
+  CC      techpack/audio/ipc/apr_tal_rpmsg.o
+  CC      techpack/camera/drivers/cam_isp/isp_hw_mgr/isp_hw/vfe_hw/vfe_top/cam_vfe_camif_ver2.o
+  CC      drivers/clk/qcom/dispcc-kona.o
+--
+  CC      drivers/mfd/syscon.o
+  CC      drivers/kernelsu/supercall/perm.o
+  CC      drivers/md/dm-default-key.o
+  CC      drivers/kernelsu/supercall/supercall.o
+  AR      drivers/mfd/built-in.a
+  AR      drivers/media/firewire/built-in.a
+  CC      drivers/media/dvb-core/dvb_ringbuffer.o
+  CC      drivers/md/dm-snap.o
+  CC      drivers/kernelsu/feature/adb_root.o
+  CC      drivers/media/dvb-core/dvb_math.o
+../drivers/kernelsu/supercall/supercall.c:92:32: error: incompatible pointer types passing 'void **' to parameter of type 'struct st_susfs_sus_path *' [-Werror,-Wincompatible-pointer-types]
+            susfs_add_sus_path(arg);
+                               ^~~
+../include/linux/susfs.h:143:57: note: passing argument to parameter 'user_info' here
+int susfs_add_sus_path(struct st_susfs_sus_path* __user user_info);
+                                                        ^
+../drivers/kernelsu/supercall/supercall.c:96:13: error: implicit declaration of function 'susfs_add_sus_path_loop' [-Werror,-Wimplicit-function-declaration]
+            susfs_add_sus_path_loop(arg);
+            ^
+../drivers/kernelsu/supercall/supercall.c:96:13: note: did you mean 'susfs_add_sus_path'?
+../include/linux/susfs.h:143:5: note: 'susfs_add_sus_path' declared here
+int susfs_add_sus_path(struct st_susfs_sus_path* __user user_info);
+    ^
+../drivers/kernelsu/supercall/supercall.c:102:13: error: implicit declaration of function 'susfs_set_hide_sus_mnts_for_non_su_procs' [-Werror,-Wimplicit-function-declaration]
+            susfs_set_hide_sus_mnts_for_non_su_procs(arg);
+            ^
+../drivers/kernelsu/supercall/supercall.c:108:33: error: incompatible pointer types passing 'void **' to parameter of type 'struct st_susfs_sus_kstat *' [-Werror,-Wincompatible-pointer-types]
+            susfs_add_sus_kstat(arg);
+                                ^~~
+../include/linux/susfs.h:158:59: note: passing argument to parameter 'user_info' here
+int susfs_add_sus_kstat(struct st_susfs_sus_kstat* __user user_info);
+                                                          ^
+../drivers/kernelsu/supercall/supercall.c:112:36: error: incompatible pointer types passing 'void **' to parameter of type 'struct st_susfs_sus_kstat *' [-Werror,-Wincompatible-pointer-types]
+            susfs_update_sus_kstat(arg);
+                                   ^~~
+../include/linux/susfs.h:159:62: note: passing argument to parameter 'user_info' here
+int susfs_update_sus_kstat(struct st_susfs_sus_kstat* __user user_info);
+                                                             ^
+../drivers/kernelsu/supercall/supercall.c:116:33: error: incompatible pointer types passing 'void **' to parameter of type 'struct st_susfs_sus_kstat *' [-Werror,-Wincompatible-pointer-types]
+            susfs_add_sus_kstat(arg);
+                                ^~~
+../include/linux/susfs.h:158:59: note: passing argument to parameter 'user_info' here
+int susfs_add_sus_kstat(struct st_susfs_sus_kstat* __user user_info);
+                                                          ^
+../drivers/kernelsu/supercall/supercall.c:122:34: error: incompatible pointer types passing 'void **' to parameter of type 'struct st_susfs_try_umount *' [-Werror,-Wincompatible-pointer-types]
+            susfs_add_try_umount(arg);
+                                 ^~~
+../include/linux/susfs.h:165:61: note: passing argument to parameter 'user_info' here
+int susfs_add_try_umount(struct st_susfs_try_umount* __user user_info);
+                                                            ^
+../drivers/kernelsu/supercall/supercall.c:128:29: error: incompatible pointer types passing 'void **' to parameter of type 'struct st_susfs_uname *' [-Werror,-Wincompatible-pointer-types]
+            susfs_set_uname(arg);
+                            ^~~
+../include/linux/susfs.h:173:51: note: passing argument to parameter 'user_info' here
+int susfs_set_uname(struct st_susfs_uname* __user user_info);
+                                                  ^
+../drivers/kernelsu/supercall/supercall.c:151:20: error: use of undeclared identifier 'CMD_SUSFS_ADD_SUS_MAP'
+        if (cmd == CMD_SUSFS_ADD_SUS_MAP) {
+                   ^
+../drivers/kernelsu/supercall/supercall.c:152:13: error: implicit declaration of function 'susfs_add_sus_map' [-Werror,-Wimplicit-function-declaration]
+            susfs_add_sus_map(arg);
+            ^
+  AR      drivers/media/dvb-core/built-in.a
+../drivers/kernelsu/supercall/supercall.c:152:13: note: did you mean 'susfs_add_sus_path'?
+../include/linux/susfs.h:143:5: note: 'susfs_add_sus_path' declared here
+int susfs_add_sus_path(struct st_susfs_sus_path* __user user_info);
+    ^
+../drivers/kernelsu/supercall/supercall.c:162:20: error: use of undeclared identifier 'CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING'
+        if (cmd == CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING) {
+                   ^
+../drivers/kernelsu/supercall/supercall.c:163:13: error: implicit declaration of function 'susfs_set_avc_log_spoofing' [-Werror,-Wimplicit-function-declaration]
+            susfs_set_avc_log_spoofing(arg);
+            ^
+  AR      drivers/media/i2c/soc_camera/built-in.a
+  CC      drivers/media/i2c/ir-kbd-i2c.o
+../drivers/kernelsu/supercall/supercall.c:167:43: error: too few arguments to function call, expected 2, have 1
+            susfs_get_enabled_features(arg);
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~    ^
+../include/linux/susfs.h:196:5: note: 'susfs_get_enabled_features' declared here
+int susfs_get_enabled_features(char __user* buf, size_t bufsize);
+    ^
+../drivers/kernelsu/supercall/supercall.c:171:13: error: implicit declaration of function 'susfs_show_variant' [-Werror,-Wimplicit-function-declaration]
+            susfs_show_variant(arg);
+            ^
+../drivers/kernelsu/supercall/supercall.c:175:13: error: implicit declaration of function 'susfs_show_version' [-Werror,-Wimplicit-function-declaration]
+            susfs_show_version(arg);
+            ^
+15 errors generated.
+make[3]: *** [../scripts/Makefile.build:339: drivers/kernelsu/supercall/supercall.o] Error 1
+make[3]: *** Waiting for unfinished jobs....
+  CC      drivers/md/dm-exception-store.o
+make[2]: *** [../scripts/Makefile.build:642: drivers/kernelsu] Error 2
+make[2]: *** Waiting for unfinished jobs....
+  AR      drivers/media/mmc/siano/built-in.a
+  AR      drivers/media/mmc/built-in.a
+  AR      drivers/media/pci/b2c2/built-in.a
+  AR      drivers/media/pci/ddbridge/built-in.a
+  AR      drivers/media/pci/dm1105/built-in.a
+  AR      drivers/media/pci/mantis/built-in.a
+  AR      drivers/media/pci/intel/ipu3/built-in.a
+  AR      drivers/media/pci/intel/built-in.a
+  AR      drivers/media/platform/cros-ec-cec/built-in.a
+  AR      drivers/media/pci/netup_unidvb/built-in.a
+  AR      drivers/media/platform/davinci/built-in.a
+  AR      drivers/media/pci/ngene/built-in.a
+  AR      drivers/media/platform/meson/built-in.a
+  AR      drivers/media/pci/pluto2/built-in.a
+  AR      drivers/media/i2c/built-in.a
+  CC      drivers/md/dm-snap-transient.o
+  AR      drivers/media/pci/pt1/built-in.a
+  CC      drivers/media/platform/msm/cvp/msm_v4l2_cvp.o
+  AR      drivers/media/pci/pt3/built-in.a
+  CC      drivers/media/platform/msm/npu/npu_dbg.o
+  AR      drivers/media/pci/saa7146/built-in.a
+  AR      drivers/media/pci/smipcie/built-in.a
+  AR      drivers/media/pci/ttpci/built-in.a
+  AR      drivers/media/pci/built-in.a
+  AR      drivers/media/platform/msm/sde/built-in.a
+  AR      drivers/media/platform/omap/built-in.a
+  CC      drivers/md/dm-snap-persistent.o
+  CC      drivers/media/platform/msm/cvp/msm_v4l2_private.o
+  CC      drivers/media/platform/msm/npu/npu_dev.o
+--
+  CC      drivers/media/tuners/mc44s803.o
+  CC      drivers/media/v4l2-core/v4l2-compat-ioctl32.o
+  CC      drivers/media/v4l2-core/v4l2-trace.o
+  CC      drivers/media/v4l2-core/v4l2-mc.o
+  AR      drivers/media/tuners/built-in.a
+  CC      drivers/media/v4l2-core/v4l2-common.o
+  CC      drivers/media/v4l2-core/v4l2-dv-timings.o
+  CC      drivers/media/v4l2-core/v4l2-mem2mem.o
+  AR      drivers/media/v4l2-core/built-in.a
+  AR      drivers/media/built-in.a
+make[1]: *** [/home/runner/work/InfiniR_kernel_alioth/InfiniR_kernel_alioth/Makefile:1256: drivers] Error 2
+make[1]: Leaving directory '/home/runner/work/InfiniR_kernel_alioth/InfiniR_kernel_alioth/out'
+make: *** [Makefile:153: sub-make] Error 2

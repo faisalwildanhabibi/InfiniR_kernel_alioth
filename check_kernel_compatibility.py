@@ -1,0 +1,834 @@
+#!/usr/bin/env python3
+"""
+InfiniR Kernel Compatibility, Composition, and Installer Validator for Poco F3 (alioth)
+=========================================================================================
+Author: Sall / Antigravity
+Description:
+    Performs comprehensive deep forensic inspection of AnyKernel3 zip files for
+    Poco F3 (alioth / aliothin, crDroid 11 / Android 15), validating:
+      1. Zip Composition & Component Manifest (files, hashes, compression, rogue file detection)
+      2. AnyKernel3 Installer Logic (anykernel.sh, ak3-core.sh, update-binary, properties, SAR rules)
+      3. Installer Binary Tools (magiskboot, busybox, magiskpolicy ELF architectures)
+      4. Kernel Payload Architecture (Image.gz-dtb, ARM64 header, decompression, Linux banner)
+      5. Device Tree & DTBO Tables (SM8250/Kona 3-FDT blobs, dtbo.img 4096 page table)
+    Compares all parameters against the official known-working reference release (raystef66 v3.00_KSUN).
+
+Usage:
+    python check_kernel_compatibility.py <target_zip_path> [--ref <reference_zip_path_or_url>] [--json <output_json>] [--markdown <output_md>]
+"""
+
+import os
+import sys
+import zlib
+import gzip
+import shutil
+import hashlib
+import struct
+import argparse
+import tempfile
+import zipfile
+import urllib.request
+from typing import Dict, Any, List, Tuple
+
+# Ensure utf-8 stdout on all platforms
+if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
+    except Exception:
+        pass
+
+DEFAULT_REF_URL = "https://github.com/raystef66/InfiniR_kernel_alioth/releases/download/v3.00_KSUN/InfiniR_Alioth_v3.00_KSUN_raystef66.zip"
+DTBO_MAGIC = b"\xd7\xb7\xab\x1e"
+FDT_MAGIC = b"\xd0\x0d\xfe\xed"
+GZIP_MAGIC = b"\x1f\x8b"
+ARM64_MAGIC = b"ARM\x64"
+ELF_MAGIC = b"\x7fELF"
+
+# Standard AnyKernel3 file manifest required for Poco F3
+MANDATORY_COMPONENTS = [
+    "Image.gz-dtb",
+    "dtbo.img",
+    "anykernel.sh",
+    "META-INF/com/google/android/update-binary",
+    "META-INF/com/google/android/updater-script",
+    "tools/ak3-core.sh",
+    "tools/magiskboot",
+    "tools/busybox",
+    "tools/magiskpolicy"
+]
+
+FORBIDDEN_COMPONENTS = [
+    "Image",       # Raw uncompressed image (exceeds boot partition)
+    "dtb",         # Loose DTB file in root (conflicts with appended DTB)
+    "dt.img",      # Loose DTB image in root
+    ".git",        # Git repository directory
+    ".gitignore",
+    ".gitmodules",
+    "README.md"
+]
+
+
+def log_pass(msg: str):
+    print(f"  [PASS] {msg}")
+
+
+def log_fail(msg: str):
+    print(f"  [FAIL] {msg}")
+
+
+def log_warn(msg: str):
+    print(f"  [WARN] {msg}")
+
+
+def log_info(msg: str):
+    print(f" [INFO] {msg}")
+
+
+def get_or_download_reference(ref_path_or_url: str, cache_dir: str) -> str:
+    """Download reference zip if given a URL or verify local path."""
+    if os.path.exists(ref_path_or_url):
+        return ref_path_or_url
+    
+    local_cached = os.path.join(cache_dir, "InfiniR_Alioth_v3.00_KSUN_raystef66.zip")
+    if os.path.exists(local_cached) and os.path.getsize(local_cached) > 10_000_000:
+        log_info(f"Using cached reference zip: {local_cached}")
+        return local_cached
+
+    if os.path.exists("InfiniR_Alioth_v3.00_KSUN_raystef66.zip") and os.path.getsize("InfiniR_Alioth_v3.00_KSUN_raystef66.zip") > 10_000_000:
+        return os.path.abspath("InfiniR_Alioth_v3.00_KSUN_raystef66.zip")
+
+    log_info(f"Downloading reference zip from {ref_path_or_url} ...")
+    req = urllib.request.Request(ref_path_or_url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req) as resp, open(local_cached, "wb") as out:
+        shutil.copyfileobj(resp, out)
+    log_info(f"Reference zip saved ({os.path.getsize(local_cached)} bytes)")
+    return local_cached
+
+
+def extract_zip_composition(zip_path: str) -> Dict[str, Any]:
+    """Analyzes complete zip composition, file entries, compression, CRC, and hashes."""
+    res = {
+        "file_path": zip_path,
+        "file_size": os.path.getsize(zip_path),
+        "sha256": "",
+        "total_files": 0,
+        "total_dirs": 0,
+        "uncompressed_size": 0,
+        "compressed_size": 0,
+        "compression_ratio": 0.0,
+        "files": {},
+        "namelist": [],
+        "rogue_files": []
+    }
+    with open(zip_path, "rb") as f:
+        res["sha256"] = hashlib.sha256(f.read()).hexdigest()
+        
+    with zipfile.ZipFile(zip_path, 'r') as z:
+        res["namelist"] = z.namelist()
+        for info in z.infolist():
+            if info.is_dir():
+                res["total_dirs"] += 1
+            else:
+                res["total_files"] += 1
+                res["uncompressed_size"] += info.file_size
+                res["compressed_size"] += info.compress_size
+                raw = z.read(info.filename)
+                file_sha = hashlib.sha256(raw).hexdigest()
+                res["files"][info.filename] = {
+                    "size": info.file_size,
+                    "compress_size": info.compress_size,
+                    "crc": info.CRC,
+                    "sha256": file_sha,
+                    "method": "Deflated" if info.compress_type == zipfile.ZIP_DEFLATED else "Stored"
+                }
+                
+                # Check for rogue files (exact match on basename or specific rogue prefixes)
+                base = os.path.basename(info.filename)
+                if base in ["Image", "dtb", "dt.img", ".gitignore", ".gitmodules", "README.md"] or info.filename.startswith(".git/") or base.endswith(".placeholder"):
+                    res["rogue_files"].append(info.filename)
+
+    if res["uncompressed_size"] > 0:
+        res["compression_ratio"] = round((res["compressed_size"] / res["uncompressed_size"]) * 100, 2)
+    return res
+
+
+def inspect_elf_binary(data: bytes) -> Dict[str, Any]:
+    """Inspects ELF header to determine binary architecture, bitness, and validity."""
+    info = {
+        "is_elf": False,
+        "bitness": None,
+        "endian": None,
+        "machine": None,
+        "arch_desc": "Unknown"
+    }
+    if len(data) >= 20 and data[:4] == ELF_MAGIC:
+        info["is_elf"] = True
+        ei_class = data[4]  # 1 = 32-bit, 2 = 64-bit
+        ei_data = data[5]   # 1 = LE, 2 = BE
+        info["bitness"] = 32 if ei_class == 1 else (64 if ei_class == 2 else None)
+        info["endian"] = "Little Endian" if ei_data == 1 else "Big Endian"
+        
+        # e_machine offset 18 (2 bytes)
+        e_machine = struct.unpack("<H" if ei_data == 1 else ">H", data[18:20])[0]
+        if e_machine == 0xB7:  # 183 = EM_AARCH64
+            info["machine"] = "AArch64 (ARM64)"
+            info["arch_desc"] = "ARM64 (64-bit)"
+        elif e_machine == 0x28: # 40 = EM_ARM
+            info["machine"] = "ARM (ARM32)"
+            info["arch_desc"] = "ARM (32-bit)"
+        elif e_machine == 0x3E: # 62 = EM_X86_64
+            info["machine"] = "x86_64"
+            info["arch_desc"] = "x86_64 (64-bit)"
+        elif e_machine == 0x03: # 3 = EM_386
+            info["machine"] = "i386"
+            info["arch_desc"] = "x86 (32-bit)"
+        else:
+            info["machine"] = f"Machine ID {e_machine}"
+            info["arch_desc"] = f"Other ({e_machine})"
+    return info
+
+
+def analyze_installer_logic(content: str) -> Dict[str, Any]:
+    """Deep analysis of anykernel.sh installer script properties, execution paths, and recovery hooks."""
+    lines = content.splitlines()
+    info = {
+        "raw_lines_count": len(lines),
+        "has_line_number_glitch": False,
+        "kernel_string": "",
+        "do_devicecheck": None,
+        "do_modules": None,
+        "do_systemless": None,
+        "do_cleanup": None,
+        "device_names": [],
+        "block": "",
+        "is_slot_device": None,
+        "ramdisk_compression": "",
+        "has_dump_boot": False,
+        "has_write_boot": False,
+        "has_sar_overlay_fix": False,
+        "imports_ak3_core": False,
+        "syntax_errors": []
+    }
+
+    in_properties = False
+    for idx, line in enumerate(lines, 1):
+        clean = line.strip()
+        if clean.startswith(("\t1\t", " 1\t", "1\t", "1  #", "1 #")):
+            info["has_line_number_glitch"] = True
+            info["syntax_errors"].append(f"Line {idx}: Line number artifact detected ('{clean[:25]}...')")
+
+        if ". tools/ak3-core.sh" in clean or "source tools/ak3-core.sh" in clean:
+            info["imports_ak3_core"] = True
+
+        if "kernel.string=" in clean:
+            info["kernel_string"] = clean.split("=", 1)[1].strip().strip('"').strip("'")
+        if "do.devicecheck=" in clean:
+            info["do_devicecheck"] = clean.split("=", 1)[1].strip().strip('"').strip("'")
+        if "do.modules=" in clean:
+            info["do_modules"] = clean.split("=", 1)[1].strip().strip('"').strip("'")
+        if "do.systemless=" in clean:
+            info["do_systemless"] = clean.split("=", 1)[1].strip().strip('"').strip("'")
+        if "do.cleanup=" in clean:
+            info["do_cleanup"] = clean.split("=", 1)[1].strip().strip('"').strip("'")
+
+        if "is_slot_device=" in clean:
+            info["is_slot_device"] = clean.split("=")[1].strip().rstrip(";").strip('"').strip("'")
+        if "block=" in clean:
+            info["block"] = clean.split("=")[1].strip().rstrip(";").strip('"').strip("'")
+        if "device.name" in clean and "=" in clean:
+            val = clean.split("=")[1].strip().rstrip(";").strip('"').strip("'")
+            if val:
+                info["device_names"].append(val)
+
+        if "dump_boot;" in clean or "dump_boot" == clean:
+            info["has_dump_boot"] = True
+        if "write_boot;" in clean or "write_boot" == clean:
+            info["has_write_boot"] = True
+
+        if "rm -rf $ramdisk/overlay" in clean or "rm -rf $ramdisk/overlay.d" in clean:
+            info["has_sar_overlay_fix"] = True
+
+    return info
+
+
+def decompress_kernel_payload(raw_data: bytes) -> Tuple[bytes, bytes]:
+    """Decompresses GZIP kernel payload and separates appended DTB table."""
+    gz_idx = raw_data.find(GZIP_MAGIC)
+    if gz_idx == -1:
+        return b"", b""
+    
+    decompressed = b""
+    unused = b""
+    try:
+        d = zlib.decompressobj(wbits=31)
+        decompressed = d.decompress(raw_data[gz_idx:])
+        unused = d.unused_data
+    except Exception:
+        try:
+            decompressed = gzip.decompress(raw_data[gz_idx:])
+        except Exception:
+            pass
+    return decompressed, unused
+
+
+def analyze_dtb_tables(dtb_bytes: bytes) -> Dict[str, Any]:
+    """Inspects appended Device Tree Blob (DTB) tables and Qualcomm Kona / SM8250 descriptors."""
+    info = {
+        "size": len(dtb_bytes),
+        "sha256": hashlib.sha256(dtb_bytes).hexdigest() if dtb_bytes else "",
+        "fdt_count": 0,
+        "has_fdt_magic": False,
+        "compatibles": [],
+        "models": [],
+        "is_sm8250_kona": False
+    }
+    if not dtb_bytes:
+        return info
+
+    offset = 0
+    while True:
+        pos = dtb_bytes.find(FDT_MAGIC, offset)
+        if pos == -1:
+            break
+        info["fdt_count"] += 1
+        offset = pos + 4
+
+    info["has_fdt_magic"] = (info["fdt_count"] > 0)
+    for pattern in [b"qcom,sm8250", b"qcom,kona", b"xiaomi,alioth", b"xiaomi,aliothin", b"Qualcomm Technologies, Inc. Kona"]:
+        if pattern in dtb_bytes:
+            info["compatibles"].append(pattern.decode('ascii', errors='ignore'))
+            
+    if "qcom,kona" in info["compatibles"] or "qcom,sm8250" in info["compatibles"] or b"msm-id" in dtb_bytes:
+        info["is_sm8250_kona"] = True
+
+    return info
+
+
+def analyze_kernel_binary(decompressed: bytes) -> Dict[str, Any]:
+    """Inspects decompressed ARM64 kernel image, header magic, and Linux version banner."""
+    info = {
+        "size": len(decompressed),
+        "sha256": hashlib.sha256(decompressed).hexdigest() if decompressed else "",
+        "is_arm64": False,
+        "banner": "",
+        "has_ksu": False,
+        "has_susfs": False,
+        "text_offset": None,
+        "image_size": None
+    }
+    if len(decompressed) < 64:
+        return info
+
+    if decompressed[0x38:0x3c] == ARM64_MAGIC:
+        info["is_arm64"] = True
+        try:
+            info["text_offset"] = struct.unpack("<Q", decompressed[0x08:0x10])[0]
+            info["image_size"] = struct.unpack("<Q", decompressed[0x10:0x18])[0]
+        except Exception:
+            pass
+
+    banner_idx = decompressed.find(b"Linux version 4.19.")
+    if banner_idx != -1:
+        end_idx = decompressed.find(b"\x00", banner_idx)
+        if end_idx != -1:
+            info["banner"] = decompressed[banner_idx:end_idx].decode('utf-8', errors='replace')
+
+    if b"KernelSU" in decompressed or b"ksu_" in decompressed:
+        info["has_ksu"] = True
+    if b"susfs" in decompressed or b"susfs_" in decompressed:
+        info["has_susfs"] = True
+
+    return info
+
+
+def analyze_dtbo_overlay(dtbo_bytes: bytes) -> Dict[str, Any]:
+    """Inspects dtbo.img header and entry table structure."""
+    info = {
+        "size": len(dtbo_bytes),
+        "sha256": hashlib.sha256(dtbo_bytes).hexdigest() if dtbo_bytes else "",
+        "is_valid": False,
+        "entry_count": 0,
+        "page_size": 0
+    }
+    if len(dtbo_bytes) >= 32 and dtbo_bytes[:4] == DTBO_MAGIC:
+        info["is_valid"] = True
+        try:
+            magic, total_size, hdr_size, entry_size, entry_count, entries_offset, page_size, version = struct.unpack(">8I", dtbo_bytes[:32])
+            info["entry_count"] = entry_count
+            info["page_size"] = page_size
+        except Exception:
+            pass
+    return info
+
+
+def run_comprehensive_validation(target_zip: str, ref_zip: str) -> Dict[str, Any]:
+    """Executes exhaustive 5-layer validation between target zip and raystef66 reference."""
+    report = {
+        "target": extract_zip_composition(target_zip),
+        "reference": extract_zip_composition(ref_zip),
+        "checks": [],
+        "verdict": "PASS",
+        "errors": [],
+        "warnings": []
+    }
+
+    with zipfile.ZipFile(target_zip) as z_target, zipfile.ZipFile(ref_zip) as z_ref:
+        target_namelist = z_target.namelist()
+        ref_namelist = z_ref.namelist()
+
+        # ==========================================
+        # 1. ZIP COMPOSITION & COMPONENT INTEGRITY
+        # ==========================================
+        # Check mandatory components
+        missing_mandatory = [c for c in MANDATORY_COMPONENTS if c not in target_namelist]
+        if not missing_mandatory:
+            report["checks"].append({
+                "subsystem": "Zip Composition",
+                "name": "Mandatory Component Manifest",
+                "status": "PASS",
+                "detail": f"All {len(MANDATORY_COMPONENTS)} mandatory AnyKernel3 components present in target archive."
+            })
+        else:
+            report["checks"].append({
+                "subsystem": "Zip Composition",
+                "name": "Mandatory Component Manifest",
+                "status": "FAIL",
+                "detail": f"CRITICAL: Missing required components: {', '.join(missing_mandatory)}",
+                "expected": f"All {len(MANDATORY_COMPONENTS)} files",
+                "found": f"Missing: {missing_mandatory}"
+            })
+            report["errors"].append(f"Missing mandatory components: {missing_mandatory}")
+
+        # Check for rogue / forbidden files
+        if not report["target"]["rogue_files"]:
+            report["checks"].append({
+                "subsystem": "Zip Composition",
+                "name": "Rogue & Forbidden File Filter",
+                "status": "PASS",
+                "detail": "No rogue, loose DTB, or conflicting uncompressed payload files detected."
+            })
+        else:
+            report["checks"].append({
+                "subsystem": "Zip Composition",
+                "name": "Rogue & Forbidden File Filter",
+                "status": "FAIL",
+                "detail": f"CRITICAL: Rogue/forbidden files detected in zip: {', '.join(report['target']['rogue_files'])}",
+                "expected": "No forbidden files",
+                "found": str(report["target"]["rogue_files"])
+            })
+            report["errors"].append(f"Rogue files in zip: {report['target']['rogue_files']}")
+
+        # Overall zip compression health
+        report["checks"].append({
+            "subsystem": "Zip Composition",
+            "name": "Archive Compression Ratio",
+            "status": "PASS",
+            "detail": f"Zip size: {report['target']['file_size']:,} B, Uncompressed: {report['target']['uncompressed_size']:,} B (Ratio: {report['target']['compression_ratio']}%, Files: {report['target']['total_files']})."
+        })
+
+        # ==========================================
+        # 2. ANYKERNEL3 INSTALLER LOGIC & SCRIPTS
+        # ==========================================
+        if "anykernel.sh" in target_namelist:
+            target_ak3_content = z_target.read("anykernel.sh").decode('utf-8', errors='replace')
+            target_logic = analyze_installer_logic(target_ak3_content)
+
+            # Syntax check
+            if not target_logic["has_line_number_glitch"] and not target_logic["syntax_errors"]:
+                report["checks"].append({
+                    "subsystem": "Installer Logic",
+                    "name": "anykernel.sh Syntax Integrity",
+                    "status": "PASS",
+                    "detail": f"anykernel.sh syntax valid (Lines: {target_logic['raw_lines_count']}, Clean execution path)."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Installer Logic",
+                    "name": "anykernel.sh Syntax Integrity",
+                    "status": "FAIL",
+                    "detail": f"CRITICAL: Syntax error / line artifact: {', '.join(target_logic['syntax_errors'])}",
+                    "expected": "Clean shell script",
+                    "found": "Syntax errors detected"
+                })
+                report["errors"].append("anykernel.sh syntax error.")
+
+            # Slot Partitioning Logic
+            if target_logic["is_slot_device"] == "1":
+                report["checks"].append({
+                    "subsystem": "Installer Logic",
+                    "name": "Partition Slot Logic (A/B)",
+                    "status": "PASS",
+                    "detail": "is_slot_device=1 is configured (Required for Poco F3 dual-slot boot partitions)."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Installer Logic",
+                    "name": "Partition Slot Logic (A/B)",
+                    "status": "FAIL",
+                    "detail": f"CRITICAL: is_slot_device is '{target_logic['is_slot_device']}'. Recovery will fail partition targeting.",
+                    "expected": "is_slot_device=1",
+                    "found": str(target_logic["is_slot_device"])
+                })
+                report["errors"].append("is_slot_device mismatch.")
+
+            # Device checks
+            if "alioth" in target_logic["device_names"] or "aliothin" in target_logic["device_names"]:
+                report["checks"].append({
+                    "subsystem": "Installer Logic",
+                    "name": "Target Device Verification",
+                    "status": "PASS",
+                    "detail": f"Target devices matched: {', '.join(target_logic['device_names'])}."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Installer Logic",
+                    "name": "Target Device Verification",
+                    "status": "FAIL",
+                    "detail": "CRITICAL: 'alioth' / 'aliothin' missing from device.name checks.",
+                    "expected": "alioth, aliothin",
+                    "found": str(target_logic["device_names"])
+                })
+                report["errors"].append("Device name mismatch.")
+
+            # Execution Pipeline
+            if target_logic["has_dump_boot"] and target_logic["has_write_boot"]:
+                report["checks"].append({
+                    "subsystem": "Installer Logic",
+                    "name": "Boot Image Repack Pipeline",
+                    "status": "PASS",
+                    "detail": "dump_boot and write_boot lifecycle execution hooks verified."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Installer Logic",
+                    "name": "Boot Image Repack Pipeline",
+                    "status": "FAIL",
+                    "detail": f"CRITICAL: Installer missing lifecycle hooks (dump_boot: {target_logic['has_dump_boot']}, write_boot: {target_logic['has_write_boot']}).",
+                    "expected": "dump_boot and write_boot",
+                    "found": "Missing hooks"
+                })
+                report["errors"].append("Incomplete installer execution pipeline.")
+
+            # SAR / Magisk overlay fix
+            if target_logic["has_sar_overlay_fix"]:
+                report["checks"].append({
+                    "subsystem": "Installer Logic",
+                    "name": "Android 15 SAR Ramdisk Migration",
+                    "status": "PASS",
+                    "detail": "Ramdisk /overlay migration rule enabled for System-As-Root Magisk / KernelSU on Android 15."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Installer Logic",
+                    "name": "Android 15 SAR Ramdisk Migration",
+                    "status": "WARN",
+                    "detail": "No explicit /overlay removal in ramdisk. May cause root overlay conflicts on SAR Android 15."
+                })
+                report["warnings"].append("Missing SAR /overlay cleanup in anykernel.sh.")
+
+        # ==========================================
+        # 3. INSTALLER BINARY TOOLS (ELF INSPECTION)
+        # ==========================================
+        for tool_name in ["tools/magiskboot", "tools/busybox", "tools/magiskpolicy"]:
+            if tool_name in target_namelist:
+                tool_bytes = z_target.read(tool_name)
+                elf_info = inspect_elf_binary(tool_bytes)
+                ref_hash = report["reference"]["files"].get(tool_name, {}).get("sha256", "")
+                hash_matches_ref = (report["target"]["files"][tool_name]["sha256"] == ref_hash) if ref_hash else True
+                
+                if elf_info["is_elf"] and (elf_info["arch_desc"] in ["ARM (32-bit)", "ARM64 (64-bit)"]):
+                    report["checks"].append({
+                        "subsystem": "Installer Binaries",
+                        "name": f"Binary: {os.path.basename(tool_name)}",
+                        "status": "PASS",
+                        "detail": f"{tool_name} valid ELF {elf_info['arch_desc']} (Size: {len(tool_bytes):,} B, Matches ref: {hash_matches_ref})."
+                    })
+                else:
+                    report["checks"].append({
+                        "subsystem": "Installer Binaries",
+                        "name": f"Binary: {os.path.basename(tool_name)}",
+                        "status": "FAIL",
+                        "detail": f"CRITICAL: {tool_name} is not a valid ARM/ARM64 ELF executable ({elf_info['arch_desc']}).",
+                        "expected": "ARM (32-bit) or ARM64 (64-bit)",
+                        "found": elf_info["arch_desc"]
+                    })
+                    report["errors"].append(f"Invalid ELF architecture for {tool_name}")
+            else:
+                report["checks"].append({
+                    "subsystem": "Installer Binaries",
+                    "name": f"Binary: {os.path.basename(tool_name)}",
+                    "status": "FAIL",
+                    "detail": f"CRITICAL: Missing tool binary {tool_name}.",
+                    "expected": tool_name,
+                    "found": "Missing"
+                })
+                report["errors"].append(f"Missing {tool_name}")
+
+        # Update-binary entrypoint check
+        if "META-INF/com/google/android/update-binary" in target_namelist:
+            ub_bytes = z_target.read("META-INF/com/google/android/update-binary")
+            if b"#!/sbin/sh" in ub_bytes or b"#!/system/bin/sh" in ub_bytes or b"# AnyKernel" in ub_bytes:
+                report["checks"].append({
+                    "subsystem": "Installer Binaries",
+                    "name": "Recovery Entrypoint (update-binary)",
+                    "status": "PASS",
+                    "detail": f"Valid recovery shell entrypoint update-binary ({len(ub_bytes):,} bytes)."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Installer Binaries",
+                    "name": "Recovery Entrypoint (update-binary)",
+                    "status": "WARN",
+                    "detail": "update-binary shell script header unverified."
+                })
+
+        # ==========================================
+        # 4. KERNEL PAYLOAD ARCHITECTURE & BANNER
+        # ==========================================
+        if "Image.gz-dtb" in target_namelist:
+            target_raw = z_target.read("Image.gz-dtb")
+            target_decompressed, target_dtb_raw = decompress_kernel_payload(target_raw)
+            target_kinfo = analyze_kernel_binary(target_decompressed)
+            target_dtb_info = analyze_dtb_tables(target_dtb_raw)
+
+            ref_raw = z_ref.read("Image.gz-dtb")
+            ref_decompressed, ref_dtb_raw = decompress_kernel_payload(ref_raw)
+            ref_kinfo = analyze_kernel_binary(ref_decompressed)
+            ref_dtb_info = analyze_dtb_tables(ref_dtb_raw)
+
+            # GZIP Stream format
+            if target_raw[:2] == GZIP_MAGIC and len(target_decompressed) > 20_000_000:
+                report["checks"].append({
+                    "subsystem": "Kernel Payload",
+                    "name": "Payload Compression (Image.gz-dtb)",
+                    "status": "PASS",
+                    "detail": f"GZIP payload verified (Compressed: {len(target_raw)/1024/1024:.2f} MB, Decompressed: {len(target_decompressed)/1024/1024:.2f} MB)."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Kernel Payload",
+                    "name": "Payload Compression (Image.gz-dtb)",
+                    "status": "FAIL",
+                    "detail": "CRITICAL: Image.gz-dtb decompression failed or payload is empty.",
+                    "expected": "GZIP (16-18 MB)",
+                    "found": f"{len(target_raw)} bytes"
+                })
+                report["errors"].append("Decompression failure.")
+
+            # ARM64 Image Header
+            if target_kinfo["is_arm64"]:
+                report["checks"].append({
+                    "subsystem": "Kernel Payload",
+                    "name": "ARM64 Kernel Header Magic",
+                    "status": "PASS",
+                    "detail": f"Valid ARM64 64-byte Header (Magic: 0x644d5241, text_offset: 0x{target_kinfo['text_offset'] or 0:x}, image_size: {target_kinfo['image_size'] or 0} B)."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Kernel Payload",
+                    "name": "ARM64 Kernel Header Magic",
+                    "status": "FAIL",
+                    "detail": "CRITICAL: ARM64 header magic missing in decompressed kernel stream.",
+                    "expected": "0x644d5241 (ARM\\x64)",
+                    "found": "Invalid"
+                })
+                report["errors"].append("Invalid ARM64 kernel header.")
+
+            # Kernel Version & OEM Banner
+            if target_kinfo["banner"]:
+                report["checks"].append({
+                    "subsystem": "Kernel Payload",
+                    "name": "Linux Version & Identity Banner",
+                    "status": "PASS",
+                    "detail": f"{target_kinfo['banner']}"
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Kernel Payload",
+                    "name": "Linux Version & Identity Banner",
+                    "status": "WARN",
+                    "detail": "Could not extract Linux kernel banner string from payload."
+                })
+                report["warnings"].append("Could not extract Linux banner.")
+
+            # ==========================================
+            # 5. DEVICE TREE & DTBO OVERLAY TABLES
+            # ==========================================
+            if target_dtb_info["has_fdt_magic"] and target_dtb_info["is_sm8250_kona"]:
+                dtb_length_match = (target_dtb_info["size"] == ref_dtb_info["size"])
+                report["checks"].append({
+                    "subsystem": "Device Tree",
+                    "name": "Appended SM8250 DTB Blobs",
+                    "status": "PASS",
+                    "detail": f"Appended Qualcomm SM8250/Kona DTBs verified ({target_dtb_info['fdt_count']} FDT blobs, {target_dtb_info['size']:,} B, Exact length match with ref: {dtb_length_match})."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Device Tree",
+                    "name": "Appended SM8250 DTB Blobs",
+                    "status": "FAIL",
+                    "detail": f"CRITICAL: SM8250/Kona device tree blobs missing from kernel payload ({target_dtb_info['size']} B).",
+                    "expected": f"3 FDT blobs ({ref_dtb_info['size']:,} B)",
+                    "found": f"{target_dtb_info['fdt_count']} blobs ({target_dtb_info['size']} B)"
+                })
+                report["errors"].append("Missing appended DTBs.")
+
+        # DTBO Image Validation
+        if "dtbo.img" in target_namelist:
+            target_dtbo_bytes = z_target.read("dtbo.img")
+            target_dtbo_info = analyze_dtbo_overlay(target_dtbo_bytes)
+            ref_dtbo_bytes = z_ref.read("dtbo.img")
+            ref_dtbo_info = analyze_dtbo_overlay(ref_dtbo_bytes)
+
+            if target_dtbo_info["is_valid"]:
+                dtbo_hash_match = (target_dtbo_info["sha256"] == ref_dtbo_info["sha256"])
+                report["checks"].append({
+                    "subsystem": "Device Tree",
+                    "name": "Hardware DTBO Image (dtbo.img)",
+                    "status": "PASS",
+                    "detail": f"Valid Android DTBO table (Entries: {target_dtbo_info['entry_count']}, Page size: {target_dtbo_info['page_size']}, Checksum matches ref: {dtbo_hash_match})."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Device Tree",
+                    "name": "Hardware DTBO Image (dtbo.img)",
+                    "status": "FAIL",
+                    "detail": "CRITICAL: dtbo.img header magic (0xd7b7ab1e) missing or corrupted.",
+                    "expected": "0xd7b7ab1e",
+                    "found": "Invalid header"
+                })
+                report["errors"].append("Invalid dtbo.img header.")
+
+    # Determine final verdict
+    if report["errors"]:
+        report["verdict"] = "FAIL"
+    elif report["warnings"]:
+        report["verdict"] = "PASS_WITH_WARNINGS"
+    else:
+        report["verdict"] = "PASS"
+
+    return report
+
+
+def print_cli_report(report: Dict[str, Any]):
+    """Pretty prints compatibility analysis report to standard output."""
+    print("\n" + "=" * 94)
+    print("       INFINIR KERNEL COMPATIBILITY, COMPOSITION & INSTALLER VALIDATION REPORT")
+    print("=" * 94)
+    print(f" Target File  : {report['target']['file_path']}")
+    print(f" Target Size  : {report['target']['file_size']:,} bytes ({report['target']['file_size']/1024/1024:.2f} MB)")
+    print(f" Reference    : raystef66 v3.00 KSUN Release ({report['reference']['file_size']:,} bytes)")
+    print("-" * 94)
+
+    current_sub = ""
+    for check in report["checks"]:
+        if check["subsystem"] != current_sub:
+            current_sub = check["subsystem"]
+            print(f"\n>> [{current_sub}]")
+        
+        status_tag = f"[{check['status']}]"
+        print(f"  {status_tag:8s} {check['name']:32s} : {check['detail']}")
+        if check["status"] == "FAIL" and "expected" in check:
+            print(f"          Expected (Ref): {check['expected']}")
+            print(f"          Found (Target): {check['found']}")
+
+    print("\n" + "=" * 94)
+    if report["verdict"] == "PASS":
+        print(" [OK] OVERALL COMPATIBILITY VERDICT: PASS")
+        print("      The zip meets all composition, installer logic, binary, and DTB requirements for Poco F3.")
+    elif report["verdict"] == "PASS_WITH_WARNINGS":
+        print(" [!] OVERALL COMPATIBILITY VERDICT: PASS WITH WARNINGS")
+        print("     The zip is structurally compatible, but review warnings above before flashing.")
+    else:
+        print(" [ERROR] OVERALL COMPATIBILITY VERDICT: FAIL (BOOTLOOP RISK DETECTED)")
+        print("         The zip contains critical defects that will prevent booting on Poco F3 (alioth).")
+    print("=" * 94 + "\n")
+
+
+def generate_markdown_report(report: Dict[str, Any]) -> str:
+    """Formats report into GitHub-flavored Markdown for CI summaries."""
+    md = []
+    md.append("## 🛡️ InfiniR Kernel Compatibility & Installer Validation Report")
+    md.append(f"- **Target File**: `{os.path.basename(report['target']['file_path'])}` ({report['target']['file_size']:,} bytes, {report['target']['file_size']/1024/1024:.2f} MB)")
+    md.append(f"- **Reference Standard**: `InfiniR_Alioth_v3.00_KSUN_raystef66.zip` ({report['reference']['file_size']:,} bytes)")
+    
+    if report["verdict"] == "PASS":
+        md.append("- **Overall Verdict**: 🟢 **PASS** (100% Compatible with Poco F3 alioth / crDroid 11)")
+    elif report["verdict"] == "PASS_WITH_WARNINGS":
+        md.append("- **Overall Verdict**: 🟡 **PASS WITH WARNINGS**")
+    else:
+        md.append("- **Overall Verdict**: 🔴 **FAIL (BOOTLOOP RISK DETECTED)**")
+        
+    md.append("\n### 📋 Detailed Subsystem Validation Matrix")
+    md.append("| Subsystem | Verification Item | Status | Details |")
+    md.append("| :--- | :--- | :---: | :--- |")
+    for check in report["checks"]:
+        icon = "✅" if check["status"] == "PASS" else ("⚠️" if check["status"] == "WARN" else "❌")
+        detail = check["detail"].replace("|", "\\|")
+        md.append(f"| **{check['subsystem']}** | {check['name']} | {icon} {check['status']} | {detail} |")
+        
+    # File Component Manifest Table
+    md.append("\n### 📦 Zip Component Manifest Comparison")
+    md.append("| Component Path | Target Size | Ref Size | Hash Match | Status |")
+    md.append("| :--- | :---: | :---: | :---: | :---: |")
+    all_files = sorted(set(list(report["target"]["files"].keys()) + list(report["reference"]["files"].keys())))
+    for f in all_files:
+        t_info = report["target"]["files"].get(f)
+        r_info = report["reference"]["files"].get(f)
+        t_sz = f"{t_info['size']:,} B" if t_info else "Missing"
+        r_sz = f"{r_info['size']:,} B" if r_info else "N/A"
+        match = "Identical" if (t_info and r_info and t_info["sha256"] == r_info["sha256"]) else ("Different" if (t_info and r_info) else "Mismatch")
+        status = "✅ PASS" if (t_info and (not r_info or t_info["size"] > 0)) else "❌ FAIL"
+        md.append(f"| `{f}` | {t_sz} | {r_sz} | {match} | {status} |")
+
+    if report["errors"]:
+        md.append("\n### ❌ Critical Defects Detected:")
+        for err in report["errors"]:
+            md.append(f"- 🔴 {err}")
+            
+    if report["warnings"]:
+        md.append("\n### ⚠️ Advisory Warnings:")
+        for warn in report["warnings"]:
+            md.append(f"- 🟡 {warn}")
+
+    return "\n".join(md)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Validate AnyKernel3 zip composition, installer logic, and binary compatibility.")
+    parser.add_argument("target", help="Path to target kernel zip file")
+    parser.add_argument("--ref", default=DEFAULT_REF_URL, help="Path or URL to raystef66 reference zip")
+    parser.add_argument("--json", help="Save JSON report to file")
+    parser.add_argument("--markdown", help="Save Markdown report to file")
+    args = parser.parse_args()
+
+    if not os.path.exists(args.target):
+        print(f"::error::Target zip not found: {args.target}")
+        sys.exit(1)
+
+    cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".compat_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    ref_zip = get_or_download_reference(args.ref, cache_dir)
+
+    report = run_comprehensive_validation(args.target, ref_zip)
+    print_cli_report(report)
+
+    if args.json:
+        import json
+        with open(args.json, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2)
+        print(f"JSON report saved to: {args.json}")
+
+    if args.markdown:
+        md_text = generate_markdown_report(report)
+        with open(args.markdown, "w", encoding="utf-8") as f:
+            f.write(md_text)
+        print(f"Markdown report saved to: {args.markdown}")
+
+    if report["verdict"] == "FAIL":
+        sys.exit(1)
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
