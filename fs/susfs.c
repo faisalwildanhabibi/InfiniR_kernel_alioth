@@ -168,6 +168,8 @@ bool susfs_is_inode_sus_path(struct inode *inode) {
 	}
 	return false;
 }
+
+const struct qstr susfs_fake_qstr_name = QSTR_INIT("..5.u.S", 7);
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
 /* sus_mount */

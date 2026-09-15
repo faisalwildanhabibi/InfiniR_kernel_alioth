@@ -194,6 +194,7 @@ bool susfs_is_sus_android_data_d_name_found(const char *d_name);
 bool susfs_is_sus_sdcard_d_name_found(const char *d_name);
 bool susfs_is_base_dentry_android_data_dir(struct dentry* base);
 bool susfs_is_base_dentry_sdcard_dir(struct dentry* base);
+extern const struct qstr susfs_fake_qstr_name;
 #endif
 
 /* sus_mount */
