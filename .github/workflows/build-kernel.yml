@@ -71,6 +71,12 @@ jobs:
           rm -rf KernelSU-Next drivers/kernelsu
           git clone -b legacy-susfs-v2 https://github.com/sidex15/KernelSU-Next.git KernelSU-Next
           (cd KernelSU-Next && git fetch --tags || true)
+          
+          # Patch uninitialized SID checks so early kernel mounts are not misclassified as zygote
+          sed -i 's/return unlikely(current_sid() == susfs_zygote_sid);/return unlikely(susfs_zygote_sid \&\& current_sid() == susfs_zygote_sid);/g' KernelSU-Next/kernel/selinux/selinux.c
+          sed -i 's/return unlikely(current_sid() == susfs_ksu_sid);/return unlikely(susfs_ksu_sid \&\& current_sid() == susfs_ksu_sid);/g' KernelSU-Next/kernel/selinux/selinux.c
+          sed -i 's/return unlikely(current_sid() == susfs_init_sid);/return unlikely(susfs_init_sid \&\& current_sid() == susfs_init_sid);/g' KernelSU-Next/kernel/selinux/selinux.c
+
           cp -r KernelSU-Next/kernel drivers/kernelsu
           rm -rf drivers/kernelsu/include/uapi
           cp -r KernelSU-Next/uapi drivers/kernelsu/include/uapi
