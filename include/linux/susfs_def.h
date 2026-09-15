@@ -97,6 +97,22 @@ static inline void susfs_set_current_proc_su_not_allowed(void) {
 	set_ti_thread_flag(&current->thread_info, TIF_PROC_SU_NOT_ALLOWED);
 }
 
+static inline bool susfs_is_current_proc_umounted(void) {
+	return test_ti_thread_flag(&current->thread_info, TIF_NON_ROOT_USER_APP_PROC);
+}
+
+static inline void susfs_set_current_proc_umounted(void) {
+	set_ti_thread_flag(&current->thread_info, TIF_NON_ROOT_USER_APP_PROC);
+}
+
+static inline void susfs_clear_current_proc_umounted(void) {
+	clear_ti_thread_flag(&current->thread_info, TIF_NON_ROOT_USER_APP_PROC);
+}
+
+static inline bool susfs_is_current_proc_umounted_app(void) {
+	return test_ti_thread_flag(&current->thread_info, TIF_NON_ROOT_USER_APP_PROC) && current_uid().val >= 10000;
+}
+
 static inline bool susfs_starts_with(const char *str, const char *prefix) {
     while (*prefix) {
         if (*str++ != *prefix++)
