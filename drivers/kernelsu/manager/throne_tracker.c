@@ -390,35 +390,16 @@ static void ksu_throne_work_fn(struct work_struct *work)
 
 void track_throne(bool prune_only)
 {
-	static bool throne_tracker_first_run __read_mostly = true;
-
-	// First scan must be synchronous to not break FDE/FBEv1 on older kernels
-	if (unlikely(throne_tracker_first_run)) {
-		mutex_lock(&throne_tracker_mutex);
-		
-		const struct cred *saved_cred = override_creds(ksu_cred);
-		do_track_throne_core(prune_only);
-		revert_creds(saved_cred);
-		
-		mutex_unlock(&throne_tracker_mutex);
-		throne_tracker_first_run = false;
-		return;
-	}
-
-	// Never flush/wait here: this is reachable from the pkg_observer
-	// fsnotify hook, which runs inside vfs_rename with the parent dir
-	// i_rwsem held, while the worker may be blocked in
-	// filp_open(packages.list) -> lookup_slow -> down_read on that same
-	// i_rwsem -- a sync cancel then deadlocks both sides in D state.
-	// Async cancel is sufficient: a mid-run worker finishes with the old
-	// prune_only, and the run queued below applies the new state (the
-	// worker's own retry reschedule is a no-op against pending work).
+	// Never flush/wait synchronously here: this can be called from fsnotify
+	// or rename hooks during PackageManagerService package scan.
+	// Running asynchronously via delayed_work ensures zero lock contention
+	// and eliminates Android 15 watchdog timeouts during boot.
 	cancel_delayed_work(&throne_data.dwork);
 
-	// Update state and queue the new work
+	// Update state and queue the work
 	throne_data.prune_only = prune_only;
 	throne_data.retries = 0;
-	schedule_delayed_work(&throne_data.dwork, 0);
+	schedule_delayed_work(&throne_data.dwork, msecs_to_jiffies(500));
 }
 
 void __init ksu_throne_tracker_init(void)

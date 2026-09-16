@@ -43,42 +43,11 @@ static int ksu_key_permission(key_ref_t key_ref, const struct cred *cred,
 }
 #endif
 
-extern int ksu_hide_setprocattr(const char *name, void *value, size_t size);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-static int (*selinux_setprocattr_fn)(const char *name, void *value, size_t size) __read_mostly = NULL;
-static __nocfi int ksu_setprocattr_wrapper(const char *name, void *value, size_t size)
-{
-	ksu_hide_setprocattr(name, value, size);
-	if (likely(selinux_setprocattr_fn))
-		return selinux_setprocattr_fn(name, value, size);
-	return 0;
-}
 #define ksu_security_add_hooks security_add_hooks
 #else
-static int (*selinux_setprocattr_fn)(struct task_struct *p, char *name, void *value, size_t size) __read_mostly = NULL;
-static __nocfi int ksu_setprocattr_wrapper(struct task_struct *p, char *name, void *value, size_t size)
-{
-	ksu_hide_setprocattr(name, value, size);
-	if (likely(selinux_setprocattr_fn))
-		return selinux_setprocattr_fn(p, name, value, size);
-
-	return 0;
-}
 #define ksu_security_add_hooks(a, b, c) security_add_hooks(a, b)
 #endif
-
-/**
- *  security_setprocattr is a weird LSM on 5.4 and up, and this is normally backported
- *  down to 4.14 and 4.19. somehow this LSM is a one-shot. only the first to register
- *  is called.
- *
- *  however this is not an issue for us on 3.x as we are hijacking selinux_ops on it
- *
- */
-#define SETPROCATTR_HOOK_NAME "ksu_setprocattr"
-static struct security_hook_list ksu_hooks_setprocattr[] __ro_after_init = {
-	LSM_HOOK_INIT(setprocattr, ksu_setprocattr_wrapper),
-};
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 static int ksu_inode_rename(struct mnt_idmap *idmap, struct inode *old_dir, struct dentry *old_dentry,
@@ -284,9 +253,6 @@ void __init ksu_lsm_hook_init(void)
 	ksu_security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), "ksu");
 #endif
 	pr_info("LSM hooks initialized.\n");
-	ksu_security_add_hooks(ksu_hooks_setprocattr, ARRAY_SIZE(ksu_hooks_setprocattr), SETPROCATTR_HOOK_NAME);
-	/* ksu_dethrone_selinux_setprocattr stubbed for Linux 4.19 / crDroid 15 stability */
-	pr_info("setprocattr (SELinux Hide) hooks initialized.\n");
 }
 #else
 void __init ksu_lsm_hook_init(void)

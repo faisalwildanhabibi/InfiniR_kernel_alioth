@@ -1109,14 +1109,16 @@ bypass_orig_flow:
 		if (mnt_ns) {
 			get_mnt_ns(mnt_ns);
 			rcu_read_lock();
-			mnt_id = list_first_entry(&mnt_ns->list, struct mount, mnt_list)->mnt_id;
-			list_for_each_entry_rcu(m, &mnt_ns->list, mnt_list) {
-				if (m->mnt_id < DEFAULT_SUS_MNT_ID) {
-					mnt_id++;
+			if (!list_empty(&mnt_ns->list)) {
+				mnt_id = list_first_entry(&mnt_ns->list, struct mount, mnt_list)->mnt_id;
+				list_for_each_entry_rcu(m, &mnt_ns->list, mnt_list) {
+					if (m->mnt_id < DEFAULT_SUS_MNT_ID) {
+						mnt_id++;
+					}
 				}
+				WRITE_ONCE(mnt->mnt.susfs_mnt_id_backup, READ_ONCE(mnt->mnt_id));
+				WRITE_ONCE(mnt->mnt_id, READ_ONCE(mnt_id));
 			}
-			WRITE_ONCE(mnt->mnt.susfs_mnt_id_backup, READ_ONCE(mnt->mnt_id));
-			WRITE_ONCE(mnt->mnt_id, READ_ONCE(mnt_id));
 			rcu_read_unlock();
 			put_mnt_ns(mnt_ns);
 		}

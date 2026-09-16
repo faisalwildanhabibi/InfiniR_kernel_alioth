@@ -100,6 +100,10 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
     uid_t new_uid = ruid;
     uid_t old_uid = current_uid().val;
 
+    if (old_uid != 0) {
+        return 0;
+    }
+
 #ifdef CONFIG_KSU_SUSFS
     // We only interest in process spwaned by zygote
     if (!susfs_is_sid_equal(current_cred(), susfs_zygote_sid)) {
