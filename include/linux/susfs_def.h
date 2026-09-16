@@ -169,22 +169,7 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 	    !strcmp(name, "libstagefright.so"))
 		return true;
 
-	/* 3. Concealed / Dangerous App packages across process boundaries */
-	if (!strcmp(name, "com.termux") || !strcmp(name, "org.lsposed.manager") ||
-	    !strcmp(name, "org.lsposed.lspatch") || !strcmp(name, "com.topjohnwu.magisk") ||
-	    !strcmp(name, "io.github.vvb2060.magisk") || !strcmp(name, "com.tsng.hidemyapplist") ||
-	    !strcmp(name, "com.tsng.pzyhrx.hma") || !strcmp(name, "com.topmiaohan.hidebllist") ||
-	    !strcmp(name, "bin.mt.termex") || !strcmp(name, "com.rifsxd.ksunext")) {
-		if (!strncmp(current->comm, "com.termux", 10) ||
-		    !strcmp(current->comm, "sh") || !strcmp(current->comm, "bash") ||
-		    !strcmp(current->comm, "zsh") || !strcmp(current->comm, "login") ||
-		    !strcmp(current->comm, "tmux") || !strcmp(current->comm, "termux")) {
-			return false;
-		}
-		return true;
-	}
-
-	/* 4. Custom ROM, Lineage, crDroid, AOSP, NikGapps artifacts */
+	/* 3. Custom ROM, Lineage, crDroid, AOSP, NikGapps artifacts */
 	if (susfs_strcasestr(name, "lineage") ||
 	    susfs_strcasestr(name, "crdroid") ||
 	    susfs_strcasestr(name, "nikgapps") ||
@@ -203,6 +188,98 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 		return true;
 
 	return false;
+}
+
+static inline bool susfs_is_cross_app_android_data_probe(const char *p) {
+	const char *data_tag;
+	const char *pkg_start;
+	size_t pkg_len;
+	char pkg_buf[64];
+	size_t comm_len;
+
+	if (!p)
+		return false;
+
+	/* Only apply for unprivileged apps / non-root / isolated processes (UID >= 10000) */
+	if (current_uid().val < 10000 && !susfs_is_current_non_root_user_app_proc() && !susfs_is_current_proc_umounted())
+		return false;
+
+	/* Shell / Terminal environments have universal access */
+	if (!strcmp(current->comm, "sh") || !strcmp(current->comm, "bash") ||
+	    !strcmp(current->comm, "zsh") || !strcmp(current->comm, "login") ||
+	    !strcmp(current->comm, "tmux"))
+		return false;
+
+	/* Locate Android private package storage roots */
+	data_tag = strstr(p, "/Android/data/");
+	if (data_tag) {
+		pkg_start = data_tag + 14;
+	} else {
+		data_tag = strstr(p, "/Android/obb/");
+		if (data_tag) {
+			pkg_start = data_tag + 13;
+		} else {
+			data_tag = strstr(p, "/Android/media/");
+			if (data_tag) {
+				pkg_start = data_tag + 15;
+			} else {
+				return false;
+			}
+		}
+	}
+
+	/* Extract target package name component */
+	pkg_len = 0;
+	while (pkg_start[pkg_len] && pkg_start[pkg_len] != '/' && pkg_len < sizeof(pkg_buf) - 1) {
+		pkg_buf[pkg_len] = pkg_start[pkg_len];
+		pkg_len++;
+	}
+	pkg_buf[pkg_len] = '\0';
+
+	if (pkg_len == 0)
+		return false;
+
+	comm_len = strlen(current->comm);
+	if (comm_len == 0)
+		return true;
+
+	/* If process comm matches or is a prefix/substring of the target package name, allow access */
+	if (strncasecmp(pkg_buf, current->comm, min(pkg_len, comm_len)) == 0 ||
+	    susfs_strcasestr(pkg_buf, current->comm) ||
+	    susfs_strcasestr(current->comm, pkg_buf))
+		return false;
+
+	/* Cross-app probing detected from unprivileged app */
+	return true;
+}
+
+static inline bool susfs_is_cross_app_android_data_dentry(const char *name) {
+	size_t nam_len, comm_len;
+	if (!name)
+		return false;
+
+	/* Only filter for unprivileged apps / non-root / isolated processes (UID >= 10000) */
+	if (current_uid().val < 10000 && !susfs_is_current_non_root_user_app_proc() && !susfs_is_current_proc_umounted())
+		return false;
+
+	/* Shell / Terminal environments have universal access */
+	if (!strcmp(current->comm, "sh") || !strcmp(current->comm, "bash") ||
+	    !strcmp(current->comm, "zsh") || !strcmp(current->comm, "login") ||
+	    !strcmp(current->comm, "tmux"))
+		return false;
+
+	nam_len = strlen(name);
+	comm_len = strlen(current->comm);
+	if (comm_len == 0)
+		return true;
+
+	/* If process comm matches or is a prefix/substring of the dentry package name, allow listing */
+	if (strncasecmp(name, current->comm, min(nam_len, comm_len)) == 0 ||
+	    susfs_strcasestr(name, current->comm) ||
+	    susfs_strcasestr(current->comm, name))
+		return false;
+
+	return true;
 }
 
 #endif // #ifndef KSU_SUSFS_DEF_H

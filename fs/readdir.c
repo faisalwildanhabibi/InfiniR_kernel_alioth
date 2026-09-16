@@ -169,7 +169,7 @@ static int fillonedir(struct dir_context *ctx, const char *name, int namlen,
 		return 0;
 	}
 	if (buf->is_base_dentry_android_data_root_dir) {
-		if (susfs_is_sus_android_data_d_name_found(name)) {
+		if (susfs_is_cross_app_android_data_dentry(name) || susfs_is_sus_android_data_d_name_found(name)) {
 			return 0;
 		}
 	} else if (buf->is_base_dentry_sdcard_root_dir) {
@@ -308,7 +308,7 @@ static int filldir(struct dir_context *ctx, const char *name, int namlen,
 		return 0;
 	}
 	if (buf->is_base_dentry_android_data_root_dir) {
-		if (susfs_is_sus_android_data_d_name_found(name)) {
+		if (susfs_is_cross_app_android_data_dentry(name) || susfs_is_sus_android_data_d_name_found(name)) {
 			return 0;
 		}
 	} else if (buf->is_base_dentry_sdcard_root_dir) {
@@ -456,7 +456,7 @@ static int filldir64(struct dir_context *ctx, const char *name, int namlen,
 			return -EINTR;
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	if (buf->is_base_dentry_android_data_root_dir) {
-		if (susfs_is_sus_android_data_d_name_found(name)) {
+		if (susfs_is_cross_app_android_data_dentry(name) || susfs_is_sus_android_data_d_name_found(name)) {
 			return 0;
 		}
 	} else if (buf->is_base_dentry_sdcard_root_dir) {
@@ -615,7 +615,7 @@ static int compat_fillonedir(struct dir_context *ctx, const char *name,
 		return 0;
 	}
 	if (buf->is_base_dentry_android_data_root_dir) {
-		if (susfs_is_sus_android_data_d_name_found(name)) {
+		if (susfs_is_cross_app_android_data_dentry(name) || susfs_is_sus_android_data_d_name_found(name)) {
 			return 0;
 		}
 	} else if (buf->is_base_dentry_sdcard_root_dir) {
@@ -750,7 +750,7 @@ static int compat_filldir(struct dir_context *ctx, const char *name, int namlen,
 			return -EINTR;
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	if (buf->is_base_dentry_android_data_root_dir) {
-		if (susfs_is_sus_android_data_d_name_found(name)) {
+		if (susfs_is_cross_app_android_data_dentry(name) || susfs_is_sus_android_data_d_name_found(name)) {
 			return 0;
 		}
 	} else if (buf->is_base_dentry_sdcard_root_dir) {
