@@ -887,8 +887,9 @@ static ssize_t sel_write_access(struct file *file, char *buf, size_t size)
 				avd.allowed = 0;
 			}
 		}
-		if (state && state->ss && state->ss->status_page) {
-			struct selinux_kernel_status *st = page_address(state->ss->status_page);
+		struct page *st_page = selinux_kernel_status_page(state);
+		if (st_page) {
+			struct selinux_kernel_status *st = page_address(st_page);
 			if (st)
 				avd.seqno = st->policyload;
 			else
