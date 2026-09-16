@@ -300,7 +300,8 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 		return true;
 
 	/* 1. Root & Module Infrastructure: Universal hiding for all present and future modules */
-	if (strstr(p, "/data/adb") || strstr(p, "/system/addon.d"))
+	if (strstr(p, "/data/adb") || strstr(p, "/system/addon.d") ||
+	    strstr(p, "/dev/__properties__/u:object_r:qemu_hw_prop:s0"))
 		return true;
 
 	/* 2. Dynamic Shell Temp Protection: Untrusted apps have no access to /data/local/tmp.
@@ -320,12 +321,34 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 		return true;
 
 	/* 5. Custom ROM, Lineage, crDroid, and recovery framework components */
-	if (susfs_strcasestr(p, "org.lineageos.") ||
-	    susfs_strcasestr(p, "lineage_alioth") ||
-	    susfs_strcasestr(p, "crdroid-official") ||
-	    susfs_strcasestr(p, "NikGapps-crdroid") ||
-	    susfs_strcasestr(p, "50-lineage.sh") ||
-	    susfs_strcasestr(p, "nikgapps_logs"))
+	if (susfs_strcasestr(p, "lineage") ||
+	    susfs_strcasestr(p, "crdroid") ||
+	    susfs_strcasestr(p, "omnijaws") ||
+	    susfs_strcasestr(p, "omnistyle") ||
+	    susfs_strcasestr(p, "omnirom") ||
+	    susfs_strcasestr(p, "protonaosp") ||
+	    susfs_strcasestr(p, "chaldeaprjkt") ||
+	    susfs_strcasestr(p, "co.aospa") ||
+	    susfs_strcasestr(p, "aospa") ||
+	    susfs_strcasestr(p, "aosp") ||
+	    susfs_strcasestr(p, "paranoid") ||
+	    susfs_strcasestr(p, "nikgapps") ||
+	    susfs_strcasestr(p, "evolution_") ||
+	    susfs_strcasestr(p, "havoc") ||
+	    susfs_strcasestr(p, "resurrection")) {
+		if (strstr(p, "/framework/") || strstr(p, "/overlay/") ||
+		    strstr(p, "/app/") || strstr(p, "/priv-app/") ||
+		    strstr(p, "/etc/permissions/") || strstr(p, "/etc/sysconfig/") ||
+		    strstr(p, "/etc/default-permissions/") || strstr(p, "/etc/init/") ||
+		    strstr(p, "/etc/vintf/") || strstr(p, "/lib64/vendor.lineage") ||
+		    strstr(p, "/nikgapps_logs") || strstr(p, "50-lineage.sh"))
+			return true;
+	}
+
+	/* 6. Build Manifest, Build Flags & Raw SELinux Policy Dumps */
+	if (strstr(p, "/build-manifest.xml") || strstr(p, "/build_flags.json") ||
+	    strstr(p, "vendor_sepolicy.cil") || strstr(p, "system_ext_sepolicy.cil") ||
+	    strstr(p, "vendor_file_contexts") || strstr(p, "system_ext_property_contexts"))
 		return true;
 
 	return false;

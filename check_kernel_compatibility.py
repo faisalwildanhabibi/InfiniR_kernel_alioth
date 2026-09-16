@@ -685,7 +685,7 @@ def analyze_in_tree_c_source(repo_root: str) -> List[Dict[str, Any]]:
         with open(namei_c, "r", encoding="utf-8", errors="ignore") as f:
             namei_content = f.read()
             
-        has_dynamic_storage = "susfs_is_cross_app_android_data_probe" in def_content and "susfs_is_cross_app_android_data_probe" in namei_content
+        has_dynamic_storage = "susfs_is_cross_app_android_data_probe" in def_content and ("susfs_is_auto_stealth_path" in namei_content or "susfs_is_cross_app_android_data_probe" in namei_content)
         has_dynamic_dentry = "susfs_is_cross_app_android_data_dentry" in def_content
         
         if has_dynamic_storage and has_dynamic_dentry:
@@ -773,12 +773,14 @@ def analyze_in_tree_c_source(repo_root: str) -> List[Dict[str, Any]]:
                 "detail": "SELinux kernel status page synchronization not detected."
             })
 
-    # 17. Private Media Library Symbol Shield (fs/namei.c)
-    if os.path.exists(namei_c):
+    # 17. Private Media Library Symbol Shield (include/linux/susfs_def.h & fs/namei.c)
+    if os.path.exists(namei_c) and os.path.exists(susfs_def_h):
         with open(namei_c, "r", encoding="utf-8", errors="ignore") as f:
             namei_content = f.read()
+        with open(susfs_def_h, "r", encoding="utf-8", errors="ignore") as f:
+            def_content = f.read()
             
-        has_stagefright_shield = "libstagefright.so" in namei_content
+        has_stagefright_shield = "libstagefright.so" in def_content or "libstagefright.so" in namei_content
         if has_stagefright_shield:
             results.append({
                 "subsystem": "Root & Stealth Architecture",

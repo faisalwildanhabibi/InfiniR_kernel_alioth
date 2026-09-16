@@ -57,62 +57,6 @@ extern bool susfs_is_inode_sus_path(struct inode *inode);
 extern bool susfs_is_base_dentry_android_data_dir(struct dentry* base);
 extern bool susfs_is_base_dentry_sdcard_dir(struct dentry* base);
 extern const struct qstr susfs_fake_qstr_name;
-static inline bool susfs_is_auto_stealth_path(const char *p) {
-	if (!p)
-		return false;
-
-	/* 1. Root, SU, and Emulator Probes */
-	if (!strncmp(p, "/data/adb", 9) && (p[9] == '/' || p[9] == '\0'))
-		return true;
-	if (!strncmp(p, "/system/addon.d", 15) && (p[15] == '/' || p[15] == '\0'))
-		return true;
-	if (!strncmp(p, "/dev/__properties__/u:object_r:qemu_hw_prop:s0", 47))
-		return true;
-
-	/* 2. Custom ROM Framework, Overlay, Permissions, Sysconfig, Init & Priv-App Artifacts */
-	if (susfs_strcasestr(p, "lineage") ||
-	    susfs_strcasestr(p, "crdroid") ||
-	    susfs_strcasestr(p, "omnijaws") ||
-	    susfs_strcasestr(p, "omnistyle") ||
-	    susfs_strcasestr(p, "omnirom") ||
-	    susfs_strcasestr(p, "protonaosp") ||
-	    susfs_strcasestr(p, "chaldeaprjkt") ||
-	    susfs_strcasestr(p, "co.aospa") ||
-	    susfs_strcasestr(p, "aospa") ||
-	    susfs_strcasestr(p, "aosp") ||
-	    susfs_strcasestr(p, "paranoid") ||
-	    susfs_strcasestr(p, "nikgapps") ||
-	    susfs_strcasestr(p, "evolution_") ||
-	    susfs_strcasestr(p, "havoc") ||
-	    susfs_strcasestr(p, "resurrection")) {
-		if (strstr(p, "/framework/") || strstr(p, "/overlay/") ||
-		    strstr(p, "/app/") || strstr(p, "/priv-app/") ||
-		    strstr(p, "/etc/permissions/") || strstr(p, "/etc/sysconfig/") ||
-		    strstr(p, "/etc/default-permissions/") || strstr(p, "/etc/init/") ||
-		    strstr(p, "/etc/vintf/") || strstr(p, "/lib64/vendor.lineage") ||
-		    strstr(p, "/nikgapps_logs"))
-			return true;
-	}
-
-	/* 3. Build Manifest & Build Flags dumps */
-	if (strstr(p, "/build-manifest.xml") || strstr(p, "/build_flags.json"))
-		return true;
-
-	/* 4. Raw SELinux Policy & Context Dumps */
-	if (strstr(p, "vendor_sepolicy.cil") || strstr(p, "system_ext_sepolicy.cil") ||
-	    strstr(p, "vendor_file_contexts") || strstr(p, "system_ext_property_contexts"))
-		return true;
-
-	/* 5. Private media library probed for custom ROM symbols */
-	if (strstr(p, "libstagefright.so"))
-		return true;
-
-	/* 6. Dynamic Scoped Storage boundary enforcement: prevent cross-app private data probes */
-	if (susfs_is_cross_app_android_data_probe(p))
-		return true;
-
-	return false;
-}
 #endif
 
 /* [Feb-1997 T. Schoebel-Theuer]
