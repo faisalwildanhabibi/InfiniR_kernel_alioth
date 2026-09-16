@@ -69,21 +69,30 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 	if (!strncmp(p, "/dev/__properties__/u:object_r:qemu_hw_prop:s0", 47))
 		return true;
 
-	/* 2. Custom ROM Framework, Overlay, & App Artifacts */
-	if (strstr(p, "org.lineageos") || strstr(p, "LineageParts") || strstr(p, "lineage_alioth") ||
+	/* 2. Custom ROM Framework, Overlay, Permissions, Sysconfig, Init & Priv-App Artifacts */
+	if (strstr(p, "lineage") || strstr(p, "Lineage") ||
 	    strstr(p, "crdroid") || strstr(p, "crDroid") ||
 	    strstr(p, "omnijaws") || strstr(p, "omnistyle") || strstr(p, "org.omnirom") ||
 	    strstr(p, "protonaosp") || strstr(p, "chaldeaprjkt") ||
-	    strstr(p, "co.aospa") || strstr(p, "paranoid") ||
+	    strstr(p, "co.aospa") || strstr(p, "aospa") || strstr(p, "paranoid") ||
+	    strstr(p, "nikgapps") || strstr(p, "NikGapps") ||
 	    strstr(p, "evolution_") || strstr(p, "havoc") || strstr(p, "resurrection")) {
 		if (strstr(p, "/framework/") || strstr(p, "/overlay/") ||
-		    strstr(p, "/app/") || strstr(p, "/priv-app/"))
+		    strstr(p, "/app/") || strstr(p, "/priv-app/") ||
+		    strstr(p, "/etc/permissions/") || strstr(p, "/etc/sysconfig/") ||
+		    strstr(p, "/etc/default-permissions/") || strstr(p, "/etc/init/") ||
+		    strstr(p, "/etc/vintf/") || strstr(p, "/lib64/vendor.lineage") ||
+		    strstr(p, "/nikgapps_logs"))
 			return true;
 	}
 
-	/* 3. Raw SELinux Policy & Context CIL Artifacts */
+	/* 3. Build Manifest & Build Flags dumps */
+	if (strstr(p, "/build-manifest.xml") || strstr(p, "/build_flags.json"))
+		return true;
+
+	/* 4. Raw SELinux Policy & Context Dumps */
 	if (strstr(p, "vendor_sepolicy.cil") || strstr(p, "system_ext_sepolicy.cil") ||
-	    strstr(p, "vendor_file_contexts"))
+	    strstr(p, "vendor_file_contexts") || strstr(p, "system_ext_property_contexts"))
 		return true;
 
 	return false;
