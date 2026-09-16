@@ -234,6 +234,41 @@ endif'''
                 f.write(kb_code)
             print(f"[OK] Patched Kbuild dynamic version and tag calculations in {kbuild_file}")
 
+    # 6. Stub out ksu_dethrone_selinux_setprocattr in hook/lsm_hooks.c to prevent vmap memory corruption in Linux 4.19
+    lsm_hooks_c = os.path.join(ksu_dir, "kernel", "hook", "lsm_hooks.c")
+    if os.path.exists(lsm_hooks_c):
+        patch_file(lsm_hooks_c,
+                   "ksu_dethrone_selinux_setprocattr();",
+                   "// ksu_dethrone_selinux_setprocattr(); /* stubbed for Linux 4.19 / crDroid 15 stability */")
+
+    # 7. Ensure ksu_observer_init is deferred until post-fs-data (never run at device_initcall)
+    init_c = os.path.join(ksu_dir, "kernel", "core", "init.c")
+    if os.path.exists(init_c):
+        patch_file(init_c,
+                   "\t\tksu_observer_init();\n\t}",
+                   "\t\t// ksu_observer_init deferred to on_post_fs_data\n\t}")
+
+    # 8. Scope seccomp and manager task_work to verified manager only (prevent Zygote crash on Android 15)
+    setuid_c = os.path.join(ksu_dir, "kernel", "hook", "setuid_hook.c")
+    if os.path.exists(setuid_c):
+        patch_file(setuid_c,
+                   "if (unlikely(is_uid_manager(new_uid) || !ksu_is_manager_appid_valid()))",
+                   "if (unlikely(is_uid_manager(new_uid)))")
+
+    # 9. Ensure supercall manager flag is only set for real manager
+    dispatch_c = os.path.join(ksu_dir, "kernel", "supercall", "dispatch.c")
+    if os.path.exists(dispatch_c):
+        patch_file(dispatch_c,
+                   "if (is_manager() || !ksu_is_manager_appid_valid())",
+                   "if (is_manager())")
+
+    # 10. Stub out selinux_hide memory hijacking in feature/selinux_hide.c
+    selinux_hide_c = os.path.join(ksu_dir, "kernel", "feature", "selinux_hide.c")
+    if os.path.exists(selinux_hide_c):
+        patch_file(selinux_hide_c,
+                   "void __init ksu_selinux_hide_init()\n{\n\t// we init this on a kthread\n\tkthread_run(ksu_hide_init_thread, NULL, \"kthread\");",
+                   "void __init ksu_selinux_hide_init()\n{\n\t// stubbed for Linux 4.19 / crDroid 15 stability\n\treturn;")
+
 if __name__ == "__main__":
     main()
 

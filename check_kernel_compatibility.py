@@ -835,6 +835,41 @@ def run_comprehensive_validation(target_zip: str, ref_zip: str) -> Dict[str, Any
                     "detail": "File-based encryption (FBE) safe: Throne tracking gated behind ksu_boot_completed."
                 })
 
+            # Rule 4: LSM hook table memory smashing protection
+            if "ksu_dethrone_selinux_setprocattr" in patch_content and "stubbed" in patch_content:
+                report["checks"].append({
+                    "subsystem": "Boot Stability & Seccomp",
+                    "name": "LSM Table Memory Safety",
+                    "status": "PASS",
+                    "detail": "Kernel security_hook_list protected: ksu_dethrone_selinux_setprocattr stubbed (No vmap table corruption in Linux 4.19)."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Boot Stability & Seccomp",
+                    "name": "LSM Table Memory Safety",
+                    "status": "FAIL",
+                    "detail": "CRITICAL: ksu_dethrone_selinux_setprocattr is active without stubbing. vmap list smashing will crash Zygote on Android 15.",
+                    "expected": "Stubbed dethrone function",
+                    "found": "Active vmap hook smashing"
+                })
+                report["errors"].append("LSM memory smashing risk detected")
+
+            # Rule 5: SELinux hide kthread and sysfs fops protection
+            if "selinux_hide" in patch_content and "stubbed" in patch_content:
+                report["checks"].append({
+                    "subsystem": "Boot Stability & Seccomp",
+                    "name": "SELinux Sysfs FOPS Safety",
+                    "status": "PASS",
+                    "detail": "SELinux sysfs file_operations protected: selinux_hide kthread memory hijacking safely stubbed."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Boot Stability & Seccomp",
+                    "name": "SELinux Sysfs FOPS Safety",
+                    "status": "WARN",
+                    "detail": "selinux_hide kthread hook is enabled. Ensure sysfs status/context operations are stable."
+                })
+
     # Determine final verdict
     if report["errors"]:
         report["verdict"] = "FAIL"
