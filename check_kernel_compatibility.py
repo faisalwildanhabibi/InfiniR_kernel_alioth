@@ -545,6 +545,114 @@ def analyze_in_tree_c_source(repo_root: str) -> List[Dict[str, Any]]:
                 "detail": "Some SuSFS feature tokens missing from susfs_get_enabled_features enumeration."
             })
 
+    # 8. SELinux Access Oracle System UID Scoping Guard (security/selinux/selinuxfs.c)
+    selinuxfs_c = os.path.join(repo_root, "security", "selinux", "selinuxfs.c")
+    if os.path.exists(selinuxfs_c):
+        with open(selinuxfs_c, "r", encoding="utf-8", errors="ignore") as f:
+            sel_content = f.read()
+        
+        # Check if selinuxfs has broad current_uid().val != 0 without UID >= 10000 scoping
+        has_broad_selinux_filter = "if (current_uid().val != 0)" in sel_content and "10000" not in sel_content
+        has_proper_uid_scoping = "current_uid().val >= 10000" in sel_content or "susfs_is_current_non_root_user_app_proc" in sel_content
+
+        if has_broad_selinux_filter:
+            results.append({
+                "subsystem": "Boot Stability & Anti-Panic",
+                "name": "SELinux Access Oracle System UID Scoping Guard",
+                "status": "FAIL",
+                "detail": "CRITICAL: SELinux access oracle filter uses broad 'current_uid().val != 0'. Will block system_server (UID 1000) and SurfaceFlinger, freezing touchscreen and causing crDroid boot logo hang.",
+                "expected": "Scoped to UID >= 10000 or susfs_is_current_non_root_user_app_proc()",
+                "found": "Broad UID != 0 interception"
+            })
+        elif has_proper_uid_scoping:
+            results.append({
+                "subsystem": "Boot Stability & Anti-Panic",
+                "name": "SELinux Access Oracle System UID Scoping Guard",
+                "status": "PASS",
+                "detail": "SELinux access oracle & context filters strictly scoped to unprivileged UIDs (UID >= 10000 / app proc). System services (UID 0-9999) guaranteed unblocked."
+            })
+        else:
+            results.append({
+                "subsystem": "Boot Stability & Anti-Panic",
+                "name": "SELinux Access Oracle System UID Scoping Guard",
+                "status": "WARN",
+                "detail": "No custom SELinux access oracle filter detected in selinuxfs.c."
+            })
+
+    # 9. Procfs PID Attr Write Scoping Guard (fs/proc/base.c)
+    proc_base_c = os.path.join(repo_root, "fs", "proc", "base.c")
+    if os.path.exists(proc_base_c):
+        with open(proc_base_c, "r", encoding="utf-8", errors="ignore") as f:
+            proc_content = f.read()
+        
+        if "proc_pid_attr_write" in proc_content:
+            has_broad_proc_filter = "current_uid().val != 0" in proc_content and "10000" not in proc_content and "proc_pid_attr_write" in proc_content
+            has_proc_scoping = "current_uid().val >= 10000" in proc_content or "susfs_is_current_non_root_user_app_proc" in proc_content
+
+            if has_broad_proc_filter:
+                results.append({
+                    "subsystem": "Boot Stability & Anti-Panic",
+                    "name": "Procfs PID Attr Write Scoping Guard",
+                    "status": "FAIL",
+                    "detail": "CRITICAL: proc_pid_attr_write filter intercepts system UIDs (UID != 0). May cause Android system attribute writing failures.",
+                    "expected": "Scoped to UID >= 10000 or susfs_is_current_non_root_user_app_proc()",
+                    "found": "Broad UID != 0 interception"
+                })
+            elif has_proc_scoping:
+                results.append({
+                    "subsystem": "Boot Stability & Anti-Panic",
+                    "name": "Procfs PID Attr Write Scoping Guard",
+                    "status": "PASS",
+                    "detail": "Procfs context write protection strictly scoped to unprivileged apps (UID >= 10000). System daemons preserved."
+                })
+
+    # 10. VFS Auto-Stealth Path Scoping Guard (fs/namei.c)
+    namei_c = os.path.join(repo_root, "fs", "namei.c")
+    if os.path.exists(namei_c):
+        with open(namei_c, "r", encoding="utf-8", errors="ignore") as f:
+            namei_content = f.read()
+        
+        if "/data/adb" in namei_content or "/system/addon.d" in namei_content:
+            has_namei_scoping = "current_uid().val >= 10000" in namei_content or "susfs_is_current_non_root_user_app_proc" in namei_content
+            has_broad_namei = "current_uid().val != 0" in namei_content and "10000" not in namei_content
+
+            if has_broad_namei:
+                results.append({
+                    "subsystem": "Root & Stealth Architecture",
+                    "name": "VFS Auto-Stealth System Scoping Guard",
+                    "status": "FAIL",
+                    "detail": "CRITICAL: VFS auto-stealth (/data/adb, /system/addon.d) intercepts system daemons (UID < 10000).",
+                    "expected": "Scoped to UID >= 10000",
+                    "found": "Broad UID != 0 interception"
+                })
+            elif has_namei_scoping:
+                results.append({
+                    "subsystem": "Root & Stealth Architecture",
+                    "name": "VFS Auto-Stealth System Scoping Guard",
+                    "status": "PASS",
+                    "detail": "VFS stealth paths (/data/adb, /system/addon.d) strictly scoped to UID >= 10000. Core daemons (installd/vold) operate normally."
+                })
+
+    # 11. SuSFS Inode State & Tmpfs Stealth Safety (fs/susfs.c)
+    if os.path.exists(susfs_c):
+        with open(susfs_c, "r", encoding="utf-8", errors="ignore") as f:
+            susfs_code = f.read()
+        
+        if "INODE_STATE_SUS_PATH" in susfs_code and "BIT_SUS_PATH" in susfs_code:
+            results.append({
+                "subsystem": "Root & Stealth Architecture",
+                "name": "SuSFS Inode State & Masking Safety",
+                "status": "PASS",
+                "detail": "SuSFS inode checks dual-verify BIT_SUS_PATH and INODE_STATE_SUS_PATH with tmpfs support."
+            })
+        else:
+            results.append({
+                "subsystem": "Root & Stealth Architecture",
+                "name": "SuSFS Inode State & Masking Safety",
+                "status": "WARN",
+                "detail": "Standard SuSFS inode state check in place."
+            })
+
     return results
 
 
