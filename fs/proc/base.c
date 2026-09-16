@@ -3280,6 +3280,17 @@ static ssize_t proc_pid_attr_write(struct file * file, const char __user * buf,
 		goto out;
 	}
 
+#ifdef CONFIG_KSU_SUSFS
+	if (current_uid().val != 0 && page) {
+		if (strnstr(page, "ksu", count) || strnstr(page, "magisk", count) ||
+		    strnstr(page, "zygisk", count) || strnstr(page, "lsposed", count) ||
+		    strnstr(page, "sui", count) || strnstr(page, "adbroot", count)) {
+			rv = -EINVAL;
+			goto out_free;
+		}
+	}
+#endif
+
 	/* Guard against adverse ptrace interaction */
 	rv = mutex_lock_interruptible(&current->signal->cred_guard_mutex);
 	if (rv < 0)

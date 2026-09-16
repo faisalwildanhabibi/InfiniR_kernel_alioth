@@ -54,7 +54,7 @@ static int susfs_update_sus_path_inode(char *target_pathname) {
 	}
 
 	dev_type = p.mnt->mnt_sb->s_type->name;
-	if (!strcmp(dev_type, "tmpfs") || !strcmp(dev_type, "fuse")) {
+	if (!strcmp(dev_type, "fuse")) {
 		SUSFS_LOGE("target_pathname: '%s' cannot be added since its filesystem type is '%s'\n",
 						target_pathname, dev_type);
 		path_put(&p);
@@ -162,7 +162,7 @@ bool susfs_is_sus_sdcard_d_name_found(const char *d_name) {
 }
 
 bool susfs_is_inode_sus_path(struct inode *inode) {
-	if (unlikely(inode && inode->i_mapping && (inode->i_mapping->flags & BIT_SUS_PATH) &&
+	if (unlikely(inode && ((inode->i_state & INODE_STATE_SUS_PATH) || (inode->i_mapping && (inode->i_mapping->flags & BIT_SUS_PATH))) &&
 		is_i_uid_not_allowed(inode->i_uid.val)))
 	{
 		return true;

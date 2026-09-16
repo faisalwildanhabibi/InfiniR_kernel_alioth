@@ -600,7 +600,8 @@ static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
 
 #ifdef CONFIG_KSU_SUSFS
 	if (current_uid().val != 0 && buf) {
-		if (strstr(buf, "ksu") || strstr(buf, "magisk") || strstr(buf, "zygisk") || strstr(buf, "sui")) {
+		if (strstr(buf, "ksu") || strstr(buf, "magisk") || strstr(buf, "zygisk") ||
+		    strstr(buf, "sui") || strstr(buf, "lsposed") || strstr(buf, "adbroot")) {
 			return -EINVAL;
 		}
 	}
@@ -848,6 +849,18 @@ static ssize_t sel_write_access(struct file *file, char *buf, size_t size)
 	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
 		goto out;
 
+#ifdef CONFIG_KSU_SUSFS
+	if (current_uid().val != 0) {
+		if ((scon && (strstr(scon, "ksu") || strstr(scon, "magisk") || strstr(scon, "zygisk") ||
+		              strstr(scon, "sui") || strstr(scon, "lsposed") || strstr(scon, "adbroot"))) ||
+		    (tcon && (strstr(tcon, "ksu") || strstr(tcon, "magisk") || strstr(tcon, "zygisk") ||
+		              strstr(tcon, "sui") || strstr(tcon, "lsposed") || strstr(tcon, "adbroot")))) {
+			length = -EINVAL;
+			goto out;
+		}
+	}
+#endif
+
 	length = security_context_str_to_sid(state, scon, &ssid, GFP_KERNEL);
 	if (length)
 		goto out;
@@ -857,6 +870,21 @@ static ssize_t sel_write_access(struct file *file, char *buf, size_t size)
 		goto out;
 
 	security_compute_av_user(state, ssid, tsid, tclass, &avd);
+
+#ifdef CONFIG_KSU_SUSFS
+	if (current_uid().val != 0) {
+		if (scon && tcon) {
+			if (!strcmp(scon, "u:r:shell:s0") && strstr(tcon, ":su")) {
+				avd.allowed = 0;
+			} else if (strstr(scon, "zygote") && strstr(tcon, "adb_data_file")) {
+				avd.allowed = 0;
+			} else if (strstr(scon, "system_server") && strstr(tcon, "system_server") && tclass == SECCLASS_PROCESS) {
+				avd.allowed &= ~PROCESS__EXECMEM;
+			}
+		}
+		avd.seqno = 1;
+	}
+#endif
 
 	length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT,
 			  "%x %x %x %x %u %x",

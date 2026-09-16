@@ -57,6 +57,17 @@ extern bool susfs_is_inode_sus_path(struct inode *inode);
 extern bool susfs_is_base_dentry_android_data_dir(struct dentry* base);
 extern bool susfs_is_base_dentry_sdcard_dir(struct dentry* base);
 extern const struct qstr susfs_fake_qstr_name;
+static inline bool susfs_is_auto_stealth_path(const char *p) {
+	if (!p)
+		return false;
+	if (!strncmp(p, "/data/adb", 9) && (p[9] == '/' || p[9] == '\0'))
+		return true;
+	if (!strncmp(p, "/system/addon.d", 15) && (p[15] == '/' || p[15] == '\0'))
+		return true;
+	if (!strncmp(p, "/dev/__properties__/u:object_r:qemu_hw_prop:s0", 47))
+		return true;
+	return false;
+}
 #endif
 
 /* [Feb-1997 T. Schoebel-Theuer]
@@ -2649,6 +2660,11 @@ static int filename_lookup(int dfd, struct filename *name, unsigned flags,
 	struct nameidata nd;
 	if (IS_ERR(name))
 		return PTR_ERR(name);
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	if ((current_uid().val >= 10000 || susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted()) &&
+	    name && name->name && susfs_is_auto_stealth_path(name->name))
+		return -ENOENT;
+#endif
 	if (unlikely(root)) {
 		nd.root = *root;
 		flags |= LOOKUP_ROOT;
@@ -4028,6 +4044,11 @@ struct file *do_filp_open(int dfd, struct filename *pathname,
 	struct nameidata nd;
 	int flags = op->lookup_flags;
 	struct file *filp;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	if ((current_uid().val >= 10000 || susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted()) &&
+	    pathname && pathname->name && susfs_is_auto_stealth_path(pathname->name))
+		return ERR_PTR(-ENOENT);
+#endif
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 	struct filename *fake_pathname;
 #endif
