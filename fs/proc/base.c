@@ -93,6 +93,9 @@
 #include <linux/sched/debug.h>
 #include <linux/sched/stat.h>
 #include <linux/flex_array.h>
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs_def.h>
+#endif
 #include <linux/posix-timers.h>
 #include <linux/cpufreq_times.h>
 #include <trace/events/oom.h>
@@ -3281,7 +3284,7 @@ static ssize_t proc_pid_attr_write(struct file * file, const char __user * buf,
 	}
 
 #ifdef CONFIG_KSU_SUSFS
-	if (current_uid().val != 0 && page) {
+	if ((current_uid().val >= 10000 || susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted()) && page) {
 		if (strnstr(page, "ksu", count) || strnstr(page, "magisk", count) ||
 		    strnstr(page, "zygisk", count) || strnstr(page, "lsposed", count) ||
 		    strnstr(page, "sui", count) || strnstr(page, "adbroot", count)) {

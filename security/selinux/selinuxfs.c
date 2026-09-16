@@ -31,6 +31,9 @@
 #include <linux/uaccess.h>
 #include <linux/kobject.h>
 #include <linux/ctype.h>
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs_def.h>
+#endif
 
 /* selinuxfs pseudo filesystem for exporting the security policy API.
    Based on the proc code and the fs/nfsd/nfsctl.c code. */
@@ -599,7 +602,7 @@ static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
 	ssize_t length;
 
 #ifdef CONFIG_KSU_SUSFS
-	if (current_uid().val != 0 && buf) {
+	if ((current_uid().val >= 10000 || susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted()) && buf) {
 		if (strstr(buf, "ksu") || strstr(buf, "magisk") || strstr(buf, "zygisk") ||
 		    strstr(buf, "sui") || strstr(buf, "lsposed") || strstr(buf, "adbroot")) {
 			return -EINVAL;
@@ -850,7 +853,7 @@ static ssize_t sel_write_access(struct file *file, char *buf, size_t size)
 		goto out;
 
 #ifdef CONFIG_KSU_SUSFS
-	if (current_uid().val != 0) {
+	if (current_uid().val >= 10000 || susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted()) {
 		if ((scon && (strstr(scon, "ksu") || strstr(scon, "magisk") || strstr(scon, "zygisk") ||
 		              strstr(scon, "sui") || strstr(scon, "lsposed") || strstr(scon, "adbroot"))) ||
 		    (tcon && (strstr(tcon, "ksu") || strstr(tcon, "magisk") || strstr(tcon, "zygisk") ||
@@ -872,7 +875,7 @@ static ssize_t sel_write_access(struct file *file, char *buf, size_t size)
 	security_compute_av_user(state, ssid, tsid, tclass, &avd);
 
 #ifdef CONFIG_KSU_SUSFS
-	if (current_uid().val != 0) {
+	if (current_uid().val >= 10000 || susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted()) {
 		if (scon && tcon) {
 			if (!strcmp(scon, "u:r:shell:s0") && strstr(tcon, ":su")) {
 				avd.allowed = 0;
