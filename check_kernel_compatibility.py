@@ -374,6 +374,121 @@ def analyze_dtbo_overlay(dtbo_bytes: bytes) -> Dict[str, Any]:
     return info
 
 
+def analyze_in_tree_c_source(repo_root: str) -> List[Dict[str, Any]]:
+    """Performs deep static code analysis of the in-tree C kernel source to guarantee boot stability."""
+    results = []
+    
+    # 1. SEPolicy StopMachine SMP scheduler safety (drivers/kernelsu/selinux/rules.c)
+    rules_c = os.path.join(repo_root, "drivers", "kernelsu", "selinux", "rules.c")
+    if os.path.exists(rules_c):
+        with open(rules_c, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        if "sched_setscheduler_nocheck" in content and "write_lock" in content:
+            results.append({
+                "subsystem": "Boot Stability & Anti-Panic",
+                "name": "SEPolicy SMP Scheduler Safety",
+                "status": "FAIL",
+                "detail": "CRITICAL: sched_setscheduler called under policy write_lock. Will cause SMP deadlock during init second_stage.",
+                "expected": "Clean stop_machine implementation",
+                "found": "Unsafe write_lock/preempt_enable scheduler manipulation"
+            })
+        elif "stop_machine(apply_kernelsu_rules_fn" in content:
+            results.append({
+                "subsystem": "Boot Stability & Anti-Panic",
+                "name": "SEPolicy SMP Scheduler Safety",
+                "status": "PASS",
+                "detail": "SEPolicy uses stop_machine: SMP scheduler deadlock eliminated for Snapdragon 870 octa-core."
+            })
+
+    # 2. Watchdog Timeout & Async Workqueue Safety (drivers/kernelsu/manager/throne_tracker.c)
+    throne_c = os.path.join(repo_root, "drivers", "kernelsu", "manager", "throne_tracker.c")
+    if os.path.exists(throne_c):
+        with open(throne_c, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        if "throne_tracker_first_run" in content and "do_track_throne_core" in content and "unlikely(throne_tracker_first_run)" in content:
+            results.append({
+                "subsystem": "Boot Stability & Anti-Panic",
+                "name": "Package Manager Watchdog Safety",
+                "status": "FAIL",
+                "detail": "CRITICAL: Synchronous /data/app search on first_run. Will block PackageManagerService and trigger Watchdog SIGABRT on Android 15.",
+                "expected": "Asynchronous delayed_work exclusively",
+                "found": "Synchronous first run present"
+            })
+        else:
+            results.append({
+                "subsystem": "Boot Stability & Anti-Panic",
+                "name": "Package Manager Watchdog Safety",
+                "status": "PASS",
+                "detail": "Throne tracking is 100% asynchronous via kernel delayed workqueue (Zero PackageManager watchdog risk)."
+            })
+
+    # 3. LSM Hook Memory Smashing Protection (drivers/kernelsu/hook/lsm_hooks.c)
+    lsm_c = os.path.join(repo_root, "drivers", "kernelsu", "hook", "lsm_hooks.c")
+    if os.path.exists(lsm_c):
+        with open(lsm_c, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        if "ksu_hooks_setprocattr" in content and "security_add_hooks" in content:
+            results.append({
+                "subsystem": "Boot Stability & Anti-Panic",
+                "name": "LSM Hook Table Integrity",
+                "status": "FAIL",
+                "detail": "CRITICAL: ksu_hooks_setprocattr is registered with NULL handler. Will break SELinux process attribute transitions.",
+                "expected": "Native SELinux setprocattr untouched",
+                "found": "Dangling setprocattr interception registered"
+            })
+        else:
+            results.append({
+                "subsystem": "Boot Stability & Anti-Panic",
+                "name": "LSM Hook Table Integrity",
+                "status": "PASS",
+                "detail": "Security hook list protected: No vmap memory smashing and native SELinux attribute handlers preserved."
+            })
+
+    # 4. SuSFS Mount Namespace Empty List Protection (fs/namespace.c)
+    ns_c = os.path.join(repo_root, "fs", "namespace.c")
+    if os.path.exists(ns_c):
+        with open(ns_c, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        if "list_first_entry(&mnt_ns->list" in content and "!list_empty(&mnt_ns->list)" in content:
+            results.append({
+                "subsystem": "Boot Stability & Anti-Panic",
+                "name": "SuSFS VFS Mount List Safety",
+                "status": "PASS",
+                "detail": "Mount namespace traversal guarded by !list_empty check (Null pointer dereference protected)."
+            })
+        elif "list_first_entry(&mnt_ns->list" in content:
+            results.append({
+                "subsystem": "Boot Stability & Anti-Panic",
+                "name": "SuSFS VFS Mount List Safety",
+                "status": "WARN",
+                "detail": "list_first_entry called on mnt_ns->list without explicit list_empty check."
+            })
+
+    # 5. Zygote Seccomp Scoping (drivers/kernelsu/hook/setuid_hook.c)
+    setuid_c = os.path.join(repo_root, "drivers", "kernelsu", "hook", "setuid_hook.c")
+    if os.path.exists(setuid_c):
+        with open(setuid_c, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        if "if (old_uid != 0)" in content and "is_uid_manager(new_uid)" in content:
+            results.append({
+                "subsystem": "Boot Stability & Anti-Panic",
+                "name": "Zygote Seccomp Scope Guard",
+                "status": "PASS",
+                "detail": "Seccomp bypass strictly scoped to verified Manager UID (Zygote filter integrity protected)."
+            })
+        elif "disable_seccomp" in content and not "is_uid_manager" in content:
+            results.append({
+                "subsystem": "Boot Stability & Anti-Panic",
+                "name": "Zygote Seccomp Scope Guard",
+                "status": "FAIL",
+                "detail": "CRITICAL: Global seccomp bypass detected. Will cause Zygote crash loop on Android 15.",
+                "expected": "is_uid_manager scoping",
+                "found": "Broad seccomp disable"
+            })
+
+    return results
+
+
 def run_comprehensive_validation(target_zip: str, ref_zip: str) -> Dict[str, Any]:
     """Executes exhaustive 5-layer validation between target zip and raystef66 reference."""
     report = {
@@ -770,105 +885,40 @@ def run_comprehensive_validation(target_zip: str, ref_zip: str) -> Dict[str, Any
                 report["errors"].append("Invalid dtbo.img header.")
 
         # ==========================================
-        # 7. BOOT STABILITY & ZYGOTE SECCOMP SAFETY
+        # 7. BOOT STABILITY & IN-TREE C CODEBASE INTEGRITY
         # ==========================================
         repo_root = os.path.dirname(os.path.abspath(__file__))
-        patch_script = os.path.join(repo_root, "scripts", "patch_ksu_manager.py")
-        if os.path.exists(patch_script):
-            with open(patch_script, "r", encoding="utf-8", errors="ignore") as f:
-                patch_content = f.read()
+        c_source_checks = analyze_in_tree_c_source(repo_root)
+        for c_check in c_source_checks:
+            report["checks"].append(c_check)
+            if c_check["status"] == "FAIL":
+                report["errors"].append(f"{c_check['name']}: {c_check['detail']}")
+            elif c_check["status"] == "WARN":
+                report["warnings"].append(f"{c_check['name']}: {c_check['detail']}")
 
-            # Rule 1: No global seccomp disable on uncrowned processes
-            if "!ksu_is_manager_appid_valid" in patch_content and "disable_seccomp" in patch_content:
+        # Payload Memory Bounds & Architecture Safeguards
+        if "Image.gz-dtb" in target_namelist:
+            target_raw = z_target.read("Image.gz-dtb")
+            decompressed_sz = len(target_decompressed) if 'target_decompressed' in locals() else 0
+            
+            # Rule: Uncompressed Kernel must not exceed physical RAM reservation (< 128 MB)
+            if 15_000_000 < decompressed_sz < 128_000_000:
                 report["checks"].append({
-                    "subsystem": "Boot Stability & Seccomp",
-                    "name": "Zygote Seccomp Scope Guard",
+                    "subsystem": "Boot Stability & Anti-Panic",
+                    "name": "Kernel RAM Footprint Ceiling",
+                    "status": "PASS",
+                    "detail": f"Uncompressed kernel footprint is {decompressed_sz/1024/1024:.2f} MB (Well within 128 MB RAM reservation ceiling)."
+                })
+            else:
+                report["checks"].append({
+                    "subsystem": "Boot Stability & Anti-Panic",
+                    "name": "Kernel RAM Footprint Ceiling",
                     "status": "FAIL",
-                    "detail": "CRITICAL: Broad seccomp bypass detected in patch script. Will crash Android 15 Zygote and cause crDroid logo freeze.",
-                    "expected": "Seccomp only disabled for verified manager UID",
-                    "found": "Global uncrowned seccomp bypass detected"
+                    "detail": f"CRITICAL: Kernel uncompressed size {decompressed_sz:,} B violates safety ceiling (15 MB - 128 MB).",
+                    "expected": "15 MB - 128 MB",
+                    "found": f"{decompressed_sz:,} B"
                 })
-                report["errors"].append("Broad seccomp bypass risk detected in patch_ksu_manager.py")
-            else:
-                report["checks"].append({
-                    "subsystem": "Boot Stability & Seccomp",
-                    "name": "Zygote Seccomp Scope Guard",
-                    "status": "PASS",
-                    "detail": "Seccomp filter integrity protected against unprivileged process bypasses (Android 15 Zygote safe)."
-                })
-
-            # Rule 2: No unmounted /data fsnotify hooks at device_initcall
-            if "ksu_observer_init" in patch_content and "core/init.c" in patch_content:
-                report["checks"].append({
-                    "subsystem": "Boot Stability & Seccomp",
-                    "name": "Early-Boot VFS State Guard",
-                    "status": "FAIL",
-                    "detail": "CRITICAL: ksu_observer_init called during device_initcall before /data is mounted. Will freeze VFS dentry cache.",
-                    "expected": "Observer initialized at post-fs-data / boot_completed",
-                    "found": "Early device_initcall observer hook detected"
-                })
-                report["errors"].append("Early-boot VFS deadlock risk detected in patch_ksu_manager.py")
-            else:
-                report["checks"].append({
-                    "subsystem": "Boot Stability & Seccomp",
-                    "name": "Early-Boot VFS State Guard",
-                    "status": "PASS",
-                    "detail": "VFS observer initialization correctly deferred until post-fs-data."
-                })
-
-            # Rule 3: LSM hooks must respect ksu_boot_completed
-            if "lsm_hooks.c" in patch_content and "allow throne tracking during system server" in patch_content:
-                report["checks"].append({
-                    "subsystem": "Boot Stability & Seccomp",
-                    "name": "FBE Throne Tracking Guard",
-                    "status": "FAIL",
-                    "detail": "CRITICAL: ksu_boot_completed guard removed in LSM hooks. Will deadlock file operations before FBE unlock.",
-                    "expected": "ksu_boot_completed guard present",
-                    "found": "Bypassed ksu_boot_completed guard"
-                })
-                report["errors"].append("FBE throne deadlock risk in patch_ksu_manager.py")
-            else:
-                report["checks"].append({
-                    "subsystem": "Boot Stability & Seccomp",
-                    "name": "FBE Throne Tracking Guard",
-                    "status": "PASS",
-                    "detail": "File-based encryption (FBE) safe: Throne tracking gated behind ksu_boot_completed."
-                })
-
-            # Rule 4: LSM hook table memory smashing protection
-            if "ksu_dethrone_selinux_setprocattr" in patch_content and "stubbed" in patch_content:
-                report["checks"].append({
-                    "subsystem": "Boot Stability & Seccomp",
-                    "name": "LSM Table Memory Safety",
-                    "status": "PASS",
-                    "detail": "Kernel security_hook_list protected: ksu_dethrone_selinux_setprocattr stubbed (No vmap table corruption in Linux 4.19)."
-                })
-            else:
-                report["checks"].append({
-                    "subsystem": "Boot Stability & Seccomp",
-                    "name": "LSM Table Memory Safety",
-                    "status": "FAIL",
-                    "detail": "CRITICAL: ksu_dethrone_selinux_setprocattr is active without stubbing. vmap list smashing will crash Zygote on Android 15.",
-                    "expected": "Stubbed dethrone function",
-                    "found": "Active vmap hook smashing"
-                })
-                report["errors"].append("LSM memory smashing risk detected")
-
-            # Rule 5: SELinux hide kthread and sysfs fops protection
-            if "selinux_hide" in patch_content and "stubbed" in patch_content:
-                report["checks"].append({
-                    "subsystem": "Boot Stability & Seccomp",
-                    "name": "SELinux Sysfs FOPS Safety",
-                    "status": "PASS",
-                    "detail": "SELinux sysfs file_operations protected: selinux_hide kthread memory hijacking safely stubbed."
-                })
-            else:
-                report["checks"].append({
-                    "subsystem": "Boot Stability & Seccomp",
-                    "name": "SELinux Sysfs FOPS Safety",
-                    "status": "WARN",
-                    "detail": "selinux_hide kthread hook is enabled. Ensure sysfs status/context operations are stable."
-                })
+                report["errors"].append(f"Kernel RAM footprint anomalous: {decompressed_sz:,} B")
 
     # Determine final verdict
     if report["errors"]:

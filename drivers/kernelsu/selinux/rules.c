@@ -74,22 +74,7 @@ static void reset_avc_cache()
 }
 
 #ifndef SELINUX_POLICY_INSTEAD_SELINUX_SS
-
-// rwlock
-#if defined(KSU_COMPAT_USE_SELINUX_STATE)
-static inline rwlock_t *ksu_get_policy_rwlock(void) { return &selinux_state.ss->policy_rwlock; }
-#elif defined(KSU_COMPAT_HAS_EXPORTED_POLICY_RWLOCK)
-static inline rwlock_t *ksu_get_policy_rwlock(void) { extern rwlock_t policy_rwlock; return &policy_rwlock; }
-#else
-static inline rwlock_t *ksu_get_policy_rwlock(void) { return NULL; }
-#endif
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0) || defined(KSU_COMPAT_HAS_BACKPORTED_CPUS_PTR)
-static inline const cpumask_t *ksu_get_current_cpumask_t() { return current->cpus_ptr; }
-#else
-static inline cpumask_t *ksu_get_current_cpumask_t() { return &current->cpus_allowed; }
-#endif
-
+// Policy manipulation on Linux < 5.10 uses stop_machine for safe SMP synchronization
 #endif // #ifndef SELINUX_POLICY_INSTEAD_SELINUX_SS
 
 static int apply_kernelsu_rules_fn(void *ptr)
@@ -666,7 +651,6 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
 	u8 *payload;
 	int ret = 0;
 	int success_cmd_count = 0;
-	cpumask_t old_mask;
 
 	if (!user_data || !data_len)
 		return -EINVAL;
@@ -692,49 +676,7 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
 	ctx.ctx_payload = (void *)payload;
 	ctx.ctx_data_len = (u64)data_len;
 
-	rwlock_t *lock = ksu_get_policy_rwlock();
-	if (!lock)
-		goto do_stop_machine;
-
-	/*
-	 * HACK: write_lock() is held with preempt enabled. DO NOT let the
-	 * task be migrated to any other CPU than the current CPU. And since
-	 * set_cpus_allowed_ptr() can sleep, use raw_smp_processor_id() to get
-	 * current CPU and bypass preemption checks.
-	 */
-	cpumask_copy(&old_mask, ksu_get_current_cpumask_t());
-	set_cpus_allowed_ptr(current, cpumask_of(raw_smp_processor_id()));
-
-	write_lock(lock);
-	preempt_enable();
-
-	if (likely(current && current->mm))
-		goto has_current_mm;
-
-	ret = handle_sepolicy_fn((void *)&ctx);
-	goto out_unlock;
-
-has_current_mm:
-	;
-
-	int old_policy = current->policy;
-	struct sched_param old_param = { .sched_priority = current->rt_priority };
-	struct sched_param new_param = { .sched_priority = 50 };
-
-	sched_setscheduler_nocheck(current, 1, &new_param);
-	ret = handle_sepolicy_fn((void *)&ctx);
-	sched_setscheduler_nocheck(current, old_policy, &old_param);
-
-out_unlock:
-	preempt_disable();
-	write_unlock(lock);
-	set_cpus_allowed_ptr(current, &old_mask);
-	goto out_done;
-
-do_stop_machine:
 	ret = stop_machine(handle_sepolicy_fn, (void *)&ctx, NULL);
-
-out_done:
 	if (ret)
 		goto out_free;
 
