@@ -70,13 +70,21 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 		return true;
 
 	/* 2. Custom ROM Framework, Overlay, Permissions, Sysconfig, Init & Priv-App Artifacts */
-	if (strstr(p, "lineage") || strstr(p, "Lineage") ||
-	    strstr(p, "crdroid") || strstr(p, "crDroid") ||
-	    strstr(p, "omnijaws") || strstr(p, "omnistyle") || strstr(p, "org.omnirom") ||
-	    strstr(p, "protonaosp") || strstr(p, "chaldeaprjkt") ||
-	    strstr(p, "co.aospa") || strstr(p, "aospa") || strstr(p, "paranoid") ||
-	    strstr(p, "nikgapps") || strstr(p, "NikGapps") ||
-	    strstr(p, "evolution_") || strstr(p, "havoc") || strstr(p, "resurrection")) {
+	if (susfs_strcasestr(p, "lineage") ||
+	    susfs_strcasestr(p, "crdroid") ||
+	    susfs_strcasestr(p, "omnijaws") ||
+	    susfs_strcasestr(p, "omnistyle") ||
+	    susfs_strcasestr(p, "omnirom") ||
+	    susfs_strcasestr(p, "protonaosp") ||
+	    susfs_strcasestr(p, "chaldeaprjkt") ||
+	    susfs_strcasestr(p, "co.aospa") ||
+	    susfs_strcasestr(p, "aospa") ||
+	    susfs_strcasestr(p, "aosp") ||
+	    susfs_strcasestr(p, "paranoid") ||
+	    susfs_strcasestr(p, "nikgapps") ||
+	    susfs_strcasestr(p, "evolution_") ||
+	    susfs_strcasestr(p, "havoc") ||
+	    susfs_strcasestr(p, "resurrection")) {
 		if (strstr(p, "/framework/") || strstr(p, "/overlay/") ||
 		    strstr(p, "/app/") || strstr(p, "/priv-app/") ||
 		    strstr(p, "/etc/permissions/") || strstr(p, "/etc/sysconfig/") ||

@@ -137,4 +137,56 @@ static inline bool susfs_is_current_proc_umounted_app(void) {
 	return test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED) && current_uid().val >= 10000;
 }
 
+static inline const char *susfs_strcasestr(const char *haystack, const char *needle) {
+	size_t hlen, nlen;
+	if (!haystack || !needle)
+		return NULL;
+	nlen = strlen(needle);
+	if (!nlen)
+		return haystack;
+	hlen = strlen(haystack);
+	while (hlen >= nlen) {
+		if (strncasecmp(haystack, needle, nlen) == 0)
+			return haystack;
+		haystack++;
+		hlen--;
+	}
+	return NULL;
+}
+
+static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
+	if (!name)
+		return false;
+
+	/* 1. Root & Recovery folders */
+	if (!strcmp(name, "addon.d") || !strcmp(name, "nikgapps_logs"))
+		return true;
+
+	/* 2. Build manifests & Raw SELinux policy / contexts dumps */
+	if (!strcmp(name, "build-manifest.xml") || !strcmp(name, "build_flags.json") ||
+	    !strcmp(name, "vendor_sepolicy.cil") || !strcmp(name, "system_ext_sepolicy.cil") ||
+	    !strcmp(name, "vendor_file_contexts") || !strcmp(name, "system_ext_property_contexts"))
+		return true;
+
+	/* 3. Custom ROM, Lineage, crDroid, AOSP, NikGapps artifacts */
+	if (susfs_strcasestr(name, "lineage") ||
+	    susfs_strcasestr(name, "crdroid") ||
+	    susfs_strcasestr(name, "nikgapps") ||
+	    susfs_strcasestr(name, "omnijaws") ||
+	    susfs_strcasestr(name, "omnistyle") ||
+	    susfs_strcasestr(name, "omnirom") ||
+	    susfs_strcasestr(name, "protonaosp") ||
+	    susfs_strcasestr(name, "chaldeaprjkt") ||
+	    susfs_strcasestr(name, "co.aospa") ||
+	    susfs_strcasestr(name, "aospa") ||
+	    susfs_strcasestr(name, "aosp") ||
+	    susfs_strcasestr(name, "paranoid") ||
+	    susfs_strcasestr(name, "evolution_") ||
+	    susfs_strcasestr(name, "havoc") ||
+	    susfs_strcasestr(name, "resurrection"))
+		return true;
+
+	return false;
+}
+
 #endif // #ifndef KSU_SUSFS_DEF_H
