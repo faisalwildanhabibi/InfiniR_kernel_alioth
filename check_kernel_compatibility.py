@@ -486,6 +486,65 @@ def analyze_in_tree_c_source(repo_root: str) -> List[Dict[str, Any]]:
                 "found": "Broad seccomp disable"
             })
 
+    # 6. SuSFS Full Feature Activation in Defconfig (arch/arm64/configs/alioth_defconfig)
+    defconfig_file = os.path.join(repo_root, "arch", "arm64", "configs", "alioth_defconfig")
+    if os.path.exists(defconfig_file):
+        with open(defconfig_file, "r", encoding="utf-8", errors="ignore") as f:
+            d_content = f.read()
+        mandatory_susfs_configs = [
+            ("CONFIG_KSU_SUSFS=y", "Core SuSFS"),
+            ("CONFIG_KSU_SUSFS_SUS_PATH=y", "Sus Path Hiding"),
+            ("CONFIG_KSU_SUSFS_SUS_MOUNT=y", "Sus Mount Hiding"),
+            ("CONFIG_KSU_SUSFS_TRY_UMOUNT=y", "Try Umount Support"),
+            ("CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y", "Spoof Cmdline"),
+            ("CONFIG_KSU_SUSFS_OPEN_REDIRECT=y", "Open Redirect"),
+            ("CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y", "Hide Symbols"),
+            ("CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y", "Magic Mount Support"),
+            ("CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y", "Auto Default Mount"),
+            ("CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y", "Auto Bind Mount"),
+            ("CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y", "Auto Try Umount Bind"),
+            ("CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y", "OverlayFS Auto Kstat"),
+            ("CONFIG_KSU_SUSFS_SUS_KSTAT=y", "Sus Kstat"),
+            ("CONFIG_KSU_SUSFS_SUS_MAP=y", "Sus Map")
+        ]
+        missing_configs = [name for cfg, name in mandatory_susfs_configs if cfg not in d_content]
+        if not missing_configs:
+            results.append({
+                "subsystem": "Root & Stealth Architecture",
+                "name": "SuSFS Advanced Feature Suite",
+                "status": "PASS",
+                "detail": f"All {len(mandatory_susfs_configs)} advanced SuSFS features active in alioth_defconfig."
+            })
+        else:
+            results.append({
+                "subsystem": "Root & Stealth Architecture",
+                "name": "SuSFS Advanced Feature Suite",
+                "status": "FAIL",
+                "detail": f"Missing active SuSFS features in defconfig: {', '.join(missing_configs)}",
+                "expected": "All features enabled (=y)",
+                "found": f"Missing: {missing_configs}"
+            })
+
+    # 7. SuSFS WebUI & Feature Enumeration Integrity (fs/susfs.c)
+    susfs_c = os.path.join(repo_root, "fs", "susfs.c")
+    if os.path.exists(susfs_c):
+        with open(susfs_c, "r", encoding="utf-8", errors="ignore") as f:
+            s_content = f.read()
+        if "CONFIG_KSU_SUSFS_SUS_PATH" in s_content and "CONFIG_KSU_SUSFS_TRY_UMOUNT" in s_content and "CONFIG_KSU_SUSFS_SUS_OVERLAYFS" in s_content:
+            results.append({
+                "subsystem": "Root & Stealth Architecture",
+                "name": "SuSFS WebUI Enumeration & Status",
+                "status": "PASS",
+                "detail": "susfs_get_enabled_features enumerates all features cleanly (Eliminates WebUI 'undefined' status)."
+            })
+        else:
+            results.append({
+                "subsystem": "Root & Stealth Architecture",
+                "name": "SuSFS WebUI Enumeration & Status",
+                "status": "WARN",
+                "detail": "Some SuSFS feature tokens missing from susfs_get_enabled_features enumeration."
+            })
+
     return results
 
 

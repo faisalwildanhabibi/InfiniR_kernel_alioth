@@ -162,6 +162,48 @@ config KSU_SUSFS_SUS_MEMFD
     help
         - Allow preventing the user-defined memfd name from being created
 
+config KSU_SUSFS_HAS_MAGIC_MOUNT
+    bool "Enable magic mount support for SUSFS"
+    depends on KSU_SUSFS
+    default y
+    help
+        - Enable magic mount compatibility support in SUSFS.
+
+config KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+    bool "Auto add SUSFS suspicious KSU default mounts"
+    depends on KSU_SUSFS_SUS_MOUNT
+    default y
+    help
+        - Automatically add KSU default mounts (/data/adb/modules, /system, etc.) to sus_mount list.
+
+config KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+    bool "Auto add SUSFS suspicious bind mounts"
+    depends on KSU_SUSFS_SUS_MOUNT
+    default y
+    help
+        - Automatically add bind mounts created by KSU domain to sus_mount list.
+
+config KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
+    bool "Auto add try_umount for bind mounts"
+    depends on KSU_SUSFS_TRY_UMOUNT
+    default y
+    help
+        - Automatically add bind mounts to try_umount list for isolated processes.
+
+config KSU_SUSFS_SUS_OVERLAYFS
+    bool "Enable SUSFS OverlayFS kstat & dentry spoofing"
+    depends on KSU_SUSFS
+    default y
+    help
+        - Automatically spoof OverlayFS lowerdata st_dev/st_ino on module dentries.
+
+config KSU_SUSFS_SUS_SU
+    bool "Enable SUSFS custom SU binary support"
+    depends on KSU_SUSFS
+    default n
+    help
+        - Optional custom FIFO character device for SuSFS SU mode.
+
 endmenu
 
 endmenu
