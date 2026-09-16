@@ -598,6 +598,14 @@ static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
 	u32 sid, len;
 	ssize_t length;
 
+#ifdef CONFIG_KSU_SUSFS
+	if (current_uid().val != 0 && buf) {
+		if (strstr(buf, "ksu") || strstr(buf, "magisk") || strstr(buf, "zygisk") || strstr(buf, "sui")) {
+			return -EINVAL;
+		}
+	}
+#endif
+
 	length = avc_has_perm(&selinux_state,
 			      current_sid(), SECINITSID_SECURITY,
 			      SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);

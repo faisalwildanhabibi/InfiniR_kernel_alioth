@@ -141,7 +141,7 @@ int susfs_sus_ino_for_filldir64(unsigned long ino) {
 }
 
 static inline bool is_i_uid_not_allowed(uid_t i_uid) {
-	return (likely(susfs_is_current_non_root_user_app_proc()) &&
+	return (likely(susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted() || current_uid().val >= 10000) &&
 		unlikely(current_uid().val != i_uid));
 }
 

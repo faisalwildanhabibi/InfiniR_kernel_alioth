@@ -181,23 +181,18 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
 
 	// Check if this is a request to install KSU fd
 	if (magic2 == KSU_INSTALL_MAGIC2) {
+		if (!is_manager()) {
+			return 0;
+		}
 		int fd = ksu_install_fd();
 		// downstream: dereference all arg usage!
 		if (copy_to_user((void __user *)*arg, &fd, sizeof(fd))) {
 			pr_err("install ksu fd reply err\n");
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
-		close_fd(fd);
+			close_fd(fd);
 #else
-		__close_fd(current->files, fd);
+			__close_fd(current->files, fd);
 #endif
-		} else {
-			if (!ksu_is_manager_appid_valid()) {
-				uid_t appid = current_uid().val % KSU_PER_USER_RANGE;
-				if (appid >= 10000) {
-					pr_info("ksu: auto-crowning manager appid %d from install_fd\n", appid);
-					ksu_set_manager_appid(appid);
-				}
-			}
 		}
 		return 0;
 	}
