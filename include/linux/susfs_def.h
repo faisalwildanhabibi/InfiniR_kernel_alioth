@@ -295,28 +295,31 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 	if (!p)
 		return false;
 
-	/* Dynamic Scoped Storage boundary check */
+	/* Dynamic Scoped Storage boundary check (blocks cross-app probing without package lists) */
 	if (susfs_is_cross_app_android_data_probe(p))
 		return true;
 
-	/* Root, manager, and custom recovery framework directories */
+	/* 1. Root & Module Infrastructure: Universal hiding for all present and future modules */
 	if (strstr(p, "/data/adb") || strstr(p, "/system/addon.d"))
 		return true;
 
-	/* Hide My Applist & module runtime data directories */
-	if (strstr(p, "/data/misc/hide_my_applist") ||
-	    strstr(p, "/data/local/tmp/sui_shell") ||
-	    strstr(p, "/data/system/NoActive") ||
-	    strstr(p, "/data/local/tmp/byyang") ||
-	    strstr(p, "/data/local/tmp/simpleHook") ||
-	    strstr(p, "/data/local/tmp/dalvik-cache"))
+	/* 2. Dynamic Shell Temp Protection: Untrusted apps have no access to /data/local/tmp.
+	 * Hides ALL temp root binaries, module sockets, daemon helper files, and exploits dynamically. */
+	if (strstr(p, "/data/local/tmp/") || !strcmp(p, "/data/local/tmp"))
 		return true;
 
-	/* Block untrusted apps from reading private media lib stagefright symbols */
+	/* 3. Module runtime data directories in /data/misc and /data/system */
+	if (strstr(p, "/data/misc/hide_my_applist") ||
+	    strstr(p, "/data/system/NoActive") ||
+	    strstr(p, "/data/misc/zygisk") ||
+	    strstr(p, "/data/misc/magisk"))
+		return true;
+
+	/* 4. Block untrusted apps from reading private media lib stagefright symbols */
 	if (strstr(p, "/system/lib/libstagefright.so") || strstr(p, "/system/lib64/libstagefright.so"))
 		return true;
 
-	/* Block custom ROM / Lineage / crDroid / NikGapps framework components */
+	/* 5. Custom ROM, Lineage, crDroid, and recovery framework components */
 	if (susfs_strcasestr(p, "org.lineageos.") ||
 	    susfs_strcasestr(p, "lineage_alioth") ||
 	    susfs_strcasestr(p, "crdroid-official") ||
