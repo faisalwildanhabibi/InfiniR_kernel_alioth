@@ -207,7 +207,7 @@ ifdef KSU_GIT_VERSION_VALID
 $(eval KSU_VERSION=$(shell expr 30000 + $(KSU_GIT_VERSION) + 200))
 $(info -- KernelSU-Next version: $(KSU_VERSION))
 ccflags-y += -DKSU_VERSION=$(KSU_VERSION)
-ifdef KSU_VERSION_TAG
+ifneq ($(KSU_VERSION_TAG),)
 $(info -- KernelSU-Next tag: $(KSU_VERSION_TAG))
 ccflags-y += -DKSU_VERSION_TAG=\\"$(KSU_VERSION_TAG)\\"
 else
@@ -233,72 +233,6 @@ endif'''
             with open(kbuild_file, "w", encoding="utf-8") as f:
                 f.write(kb_code)
             print(f"[OK] Patched Kbuild dynamic version and tag calculations in {kbuild_file}")
-
-    # 6. Patch core/init.c to initialize observer for built-in kernel mode
-    init_c = os.path.join(ksu_dir, "kernel", "core", "init.c")
-    if os.path.exists(init_c):
-        with open(init_c, "r", encoding="utf-8", errors="ignore") as f:
-            init_code = f.read()
-        old_init_tail = """\t\tksu_ksud_init();
-
-\t\tksu_file_wrapper_init();
-\t}"""
-        new_init_tail = """\t\tksu_ksud_init();
-
-\t\tksu_file_wrapper_init();
-
-\t\tksu_observer_init();
-\t}"""
-        if old_init_tail in init_code:
-            init_code = init_code.replace(old_init_tail, new_init_tail)
-            with open(init_c, "w", encoding="utf-8") as f:
-                f.write(init_code)
-            print(f"[OK] Added ksu_observer_init to built-in init in {init_c}")
-
-    # 7. Patch hook/lsm_hooks.c to allow throne tracking during boot
-    lsm_hooks_c = os.path.join(ksu_dir, "kernel", "hook", "lsm_hooks.c")
-    if os.path.exists(lsm_hooks_c):
-        patch_file(lsm_hooks_c,
-                   "if (!ksu_boot_completed) {\n\t\treturn 0;\n\t}",
-                   "// allow throne tracking during system server initialization\n\t(void)ksu_boot_completed;")
-
-    # 8. Patch hook/setuid_hook.c to disable seccomp for uncrowned app processes
-    setuid_c = os.path.join(ksu_dir, "kernel", "hook", "setuid_hook.c")
-    if os.path.exists(setuid_c):
-        with open(setuid_c, "r", encoding="utf-8", errors="ignore") as f:
-            setuid_code = f.read()
-
-        old_manager_check = """    if (unlikely(is_uid_manager(new_uid))) {
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-        if (current->seccomp.mode == SECCOMP_MODE_FILTER && current->seccomp.filter) {
-            ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
-        }
-#else
-		disable_seccomp(current);
-#endif"""
-
-        new_manager_check = """    if (unlikely(is_uid_manager(new_uid) || !ksu_is_manager_appid_valid())) {
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-        if (current->seccomp.mode == SECCOMP_MODE_FILTER && current->seccomp.filter) {
-            ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
-        }
-#else
-		disable_seccomp(current);
-#endif"""
-        if old_manager_check in setuid_code:
-            setuid_code = setuid_code.replace(old_manager_check, new_manager_check)
-            with open(setuid_c, "w", encoding="utf-8") as f:
-                f.write(setuid_code)
-            print(f"[OK] Patched uncrowned manager seccomp bypass in {setuid_c}")
-
-    # 9. Patch dispatch.c to set KSU_GET_INFO_FLAG_MANAGER for uncrowned manager
-    dispatch_c = os.path.join(ksu_dir, "kernel", "supercall", "dispatch.c")
-    if os.path.exists(dispatch_c):
-        patch_file(dispatch_c,
-                   "if (is_manager()) {\n\t\tcmd.flags |= KSU_GET_INFO_FLAG_MANAGER;\n\t}",
-                   "if (is_manager() || !ksu_is_manager_appid_valid()) {\n\t\tcmd.flags |= KSU_GET_INFO_FLAG_MANAGER;\n\t}")
 
 if __name__ == "__main__":
     main()

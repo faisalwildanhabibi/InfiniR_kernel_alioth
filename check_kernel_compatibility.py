@@ -769,6 +769,72 @@ def run_comprehensive_validation(target_zip: str, ref_zip: str) -> Dict[str, Any
                 })
                 report["errors"].append("Invalid dtbo.img header.")
 
+        # ==========================================
+        # 7. BOOT STABILITY & ZYGOTE SECCOMP SAFETY
+        # ==========================================
+        repo_root = os.path.dirname(os.path.abspath(__file__))
+        patch_script = os.path.join(repo_root, "scripts", "patch_ksu_manager.py")
+        if os.path.exists(patch_script):
+            with open(patch_script, "r", encoding="utf-8", errors="ignore") as f:
+                patch_content = f.read()
+
+            # Rule 1: No global seccomp disable on uncrowned processes
+            if "!ksu_is_manager_appid_valid" in patch_content and "disable_seccomp" in patch_content:
+                report["checks"].append({
+                    "subsystem": "Boot Stability & Seccomp",
+                    "name": "Zygote Seccomp Scope Guard",
+                    "status": "FAIL",
+                    "detail": "CRITICAL: Broad seccomp bypass detected in patch script. Will crash Android 15 Zygote and cause crDroid logo freeze.",
+                    "expected": "Seccomp only disabled for verified manager UID",
+                    "found": "Global uncrowned seccomp bypass detected"
+                })
+                report["errors"].append("Broad seccomp bypass risk detected in patch_ksu_manager.py")
+            else:
+                report["checks"].append({
+                    "subsystem": "Boot Stability & Seccomp",
+                    "name": "Zygote Seccomp Scope Guard",
+                    "status": "PASS",
+                    "detail": "Seccomp filter integrity protected against unprivileged process bypasses (Android 15 Zygote safe)."
+                })
+
+            # Rule 2: No unmounted /data fsnotify hooks at device_initcall
+            if "ksu_observer_init" in patch_content and "core/init.c" in patch_content:
+                report["checks"].append({
+                    "subsystem": "Boot Stability & Seccomp",
+                    "name": "Early-Boot VFS State Guard",
+                    "status": "FAIL",
+                    "detail": "CRITICAL: ksu_observer_init called during device_initcall before /data is mounted. Will freeze VFS dentry cache.",
+                    "expected": "Observer initialized at post-fs-data / boot_completed",
+                    "found": "Early device_initcall observer hook detected"
+                })
+                report["errors"].append("Early-boot VFS deadlock risk detected in patch_ksu_manager.py")
+            else:
+                report["checks"].append({
+                    "subsystem": "Boot Stability & Seccomp",
+                    "name": "Early-Boot VFS State Guard",
+                    "status": "PASS",
+                    "detail": "VFS observer initialization correctly deferred until post-fs-data."
+                })
+
+            # Rule 3: LSM hooks must respect ksu_boot_completed
+            if "lsm_hooks.c" in patch_content and "allow throne tracking during system server" in patch_content:
+                report["checks"].append({
+                    "subsystem": "Boot Stability & Seccomp",
+                    "name": "FBE Throne Tracking Guard",
+                    "status": "FAIL",
+                    "detail": "CRITICAL: ksu_boot_completed guard removed in LSM hooks. Will deadlock file operations before FBE unlock.",
+                    "expected": "ksu_boot_completed guard present",
+                    "found": "Bypassed ksu_boot_completed guard"
+                })
+                report["errors"].append("FBE throne deadlock risk in patch_ksu_manager.py")
+            else:
+                report["checks"].append({
+                    "subsystem": "Boot Stability & Seccomp",
+                    "name": "FBE Throne Tracking Guard",
+                    "status": "PASS",
+                    "detail": "File-based encryption (FBE) safe: Throne tracking gated behind ksu_boot_completed."
+                })
+
     # Determine final verdict
     if report["errors"]:
         report["verdict"] = "FAIL"
