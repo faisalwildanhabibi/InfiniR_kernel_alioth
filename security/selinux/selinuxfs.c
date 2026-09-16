@@ -883,9 +883,19 @@ static ssize_t sel_write_access(struct file *file, char *buf, size_t size)
 				avd.allowed = 0;
 			} else if (strstr(scon, "system_server") && strstr(tcon, "system_server") && tclass == SECCLASS_PROCESS) {
 				avd.allowed &= ~PROCESS__EXECMEM;
+			} else if (strstr(scon, "fsck_untrusted") || strstr(tcon, "fsck_untrusted")) {
+				avd.allowed = 0;
 			}
 		}
-		avd.seqno = 1;
+		if (state && state->ss && state->ss->status_page) {
+			struct selinux_kernel_status *st = page_address(state->ss->status_page);
+			if (st)
+				avd.seqno = st->policyload;
+			else
+				avd.seqno = 0;
+		} else {
+			avd.seqno = 0;
+		}
 	}
 #endif
 
