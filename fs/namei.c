@@ -60,12 +60,32 @@ extern const struct qstr susfs_fake_qstr_name;
 static inline bool susfs_is_auto_stealth_path(const char *p) {
 	if (!p)
 		return false;
+
+	/* 1. Root, SU, and Emulator Probes */
 	if (!strncmp(p, "/data/adb", 9) && (p[9] == '/' || p[9] == '\0'))
 		return true;
 	if (!strncmp(p, "/system/addon.d", 15) && (p[15] == '/' || p[15] == '\0'))
 		return true;
 	if (!strncmp(p, "/dev/__properties__/u:object_r:qemu_hw_prop:s0", 47))
 		return true;
+
+	/* 2. Custom ROM Framework, Overlay, & App Artifacts */
+	if (strstr(p, "org.lineageos") || strstr(p, "LineageParts") || strstr(p, "lineage_alioth") ||
+	    strstr(p, "crdroid") || strstr(p, "crDroid") ||
+	    strstr(p, "omnijaws") || strstr(p, "omnistyle") || strstr(p, "org.omnirom") ||
+	    strstr(p, "protonaosp") || strstr(p, "chaldeaprjkt") ||
+	    strstr(p, "co.aospa") || strstr(p, "paranoid") ||
+	    strstr(p, "evolution_") || strstr(p, "havoc") || strstr(p, "resurrection")) {
+		if (strstr(p, "/framework/") || strstr(p, "/overlay/") ||
+		    strstr(p, "/app/") || strstr(p, "/priv-app/"))
+			return true;
+	}
+
+	/* 3. Raw SELinux Policy & Context CIL Artifacts */
+	if (strstr(p, "vendor_sepolicy.cil") || strstr(p, "system_ext_sepolicy.cil") ||
+	    strstr(p, "vendor_file_contexts"))
+		return true;
+
 	return false;
 }
 #endif
