@@ -172,6 +172,18 @@ static void avc_dump_av(struct audit_buffer *ab, u16 tclass, u32 av)
  * @tsid: target security identifier
  * @tclass: target security class
  */
+static inline bool susfs_is_suspicious_log_token(const char *s) {
+	if (!s)
+		return false;
+	if (strstr(s, "lineage") || strstr(s, "Lineage") ||
+	    strstr(s, "crdroid") || strstr(s, "crDroid") ||
+	    strstr(s, "aosp") || strstr(s, "Aosp") ||
+	    strstr(s, "ksu") || strstr(s, "magisk") || strstr(s, "zygisk") ||
+	    strstr(s, "sui") || strstr(s, "lsposed"))
+		return true;
+	return false;
+}
+
 static void avc_dump_query(struct audit_buffer *ab, struct selinux_state *state,
 			   u32 ssid, u32 tsid, u16 tclass)
 {
@@ -183,7 +195,10 @@ static void avc_dump_query(struct audit_buffer *ab, struct selinux_state *state,
 	if (rc)
 		audit_log_format(ab, "ssid=%d", ssid);
 	else {
-		audit_log_format(ab, "scontext=%s", scontext);
+		if (susfs_is_suspicious_log_token(scontext))
+			audit_log_format(ab, "scontext=u:r:untrusted_app:s0");
+		else
+			audit_log_format(ab, "scontext=%s", scontext);
 		kfree(scontext);
 	}
 
@@ -191,7 +206,10 @@ static void avc_dump_query(struct audit_buffer *ab, struct selinux_state *state,
 	if (rc)
 		audit_log_format(ab, " tsid=%d", tsid);
 	else {
-		audit_log_format(ab, " tcontext=%s", scontext);
+		if (susfs_is_suspicious_log_token(scontext))
+			audit_log_format(ab, " tcontext=u:object_r:system_data_file:s0");
+		else
+			audit_log_format(ab, " tcontext=%s", scontext);
 		kfree(scontext);
 	}
 
