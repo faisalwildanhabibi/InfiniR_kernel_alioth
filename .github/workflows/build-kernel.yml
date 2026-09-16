@@ -66,24 +66,10 @@ jobs:
           git clone --depth=1 -b lineage-18.1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 toolchain/gcc64
           git clone --depth=1 -b lineage-18.1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 toolchain/gcc32
 
-      - name: Prepare Drivers & Symlinks
+      - name: Prepare KernelSU-Next Environment
         run: |
-          rm -rf KernelSU-Next drivers/kernelsu
-          git clone -b legacy-susfs-v2 https://github.com/sidex15/KernelSU-Next.git KernelSU-Next
-          (cd KernelSU-Next && git fetch --tags || true)
-          
-          # Patch SELinux uninitialized SIDs and multi-signature Manager support
-          python3 scripts/patch_ksu_manager.py KernelSU-Next
-
-          cp -r KernelSU-Next/kernel drivers/kernelsu
-          rm -rf drivers/kernelsu/include/uapi
-          cp -r KernelSU-Next/uapi drivers/kernelsu/include/uapi
-          cp -r KernelSU-Next/uapi drivers/kernelsu/uapi
-          
-          cd KernelSU-Next
-          KSU_VER=$(git describe --tags --abbrev=0 2>/dev/null || git describe --tags --always 2>/dev/null)
-          KSU_COUNT=$(git rev-list --count HEAD 2>/dev/null)
-          cd ..
+          KSU_VER="v3.2.0-legacy-susfs-v2"
+          KSU_COUNT="3021"
           echo "KSU_VERSION_TAG=$KSU_VER" >> $GITHUB_ENV
           echo "KSU_GIT_VERSION=$KSU_COUNT" >> $GITHUB_ENV
 
