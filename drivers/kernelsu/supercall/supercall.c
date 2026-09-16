@@ -76,8 +76,11 @@ int ksu_install_fd(void)
 int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
 			  void __user **arg)
 {
+	if (current_uid().val != 0 && !is_manager())
+		return -EPERM;
+
 	if (magic1 != KSU_INSTALL_MAGIC1)
-		return 0;
+		return -EPERM;
 
 #ifdef CONFIG_KSU_DEBUG
 	pr_info("sys_reboot: intercepted call! magic: 0x%x id: %d\n", magic1,

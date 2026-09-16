@@ -165,10 +165,26 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 	/* 2. Build manifests & Raw SELinux policy / contexts dumps */
 	if (!strcmp(name, "build-manifest.xml") || !strcmp(name, "build_flags.json") ||
 	    !strcmp(name, "vendor_sepolicy.cil") || !strcmp(name, "system_ext_sepolicy.cil") ||
-	    !strcmp(name, "vendor_file_contexts") || !strcmp(name, "system_ext_property_contexts"))
+	    !strcmp(name, "vendor_file_contexts") || !strcmp(name, "system_ext_property_contexts") ||
+	    !strcmp(name, "libstagefright.so"))
 		return true;
 
-	/* 3. Custom ROM, Lineage, crDroid, AOSP, NikGapps artifacts */
+	/* 3. Concealed / Dangerous App packages across process boundaries */
+	if (!strcmp(name, "com.termux") || !strcmp(name, "org.lsposed.manager") ||
+	    !strcmp(name, "org.lsposed.lspatch") || !strcmp(name, "com.topjohnwu.magisk") ||
+	    !strcmp(name, "io.github.vvb2060.magisk") || !strcmp(name, "com.tsng.hidemyapplist") ||
+	    !strcmp(name, "com.tsng.pzyhrx.hma") || !strcmp(name, "com.topmiaohan.hidebllist") ||
+	    !strcmp(name, "bin.mt.termex") || !strcmp(name, "com.rifsxd.ksunext")) {
+		if (!strncmp(current->comm, "com.termux", 10) ||
+		    !strcmp(current->comm, "sh") || !strcmp(current->comm, "bash") ||
+		    !strcmp(current->comm, "zsh") || !strcmp(current->comm, "login") ||
+		    !strcmp(current->comm, "tmux") || !strcmp(current->comm, "termux")) {
+			return false;
+		}
+		return true;
+	}
+
+	/* 4. Custom ROM, Lineage, crDroid, AOSP, NikGapps artifacts */
 	if (susfs_strcasestr(name, "lineage") ||
 	    susfs_strcasestr(name, "crdroid") ||
 	    susfs_strcasestr(name, "nikgapps") ||

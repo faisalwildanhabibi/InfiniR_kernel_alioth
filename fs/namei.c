@@ -103,6 +103,29 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 	    strstr(p, "vendor_file_contexts") || strstr(p, "system_ext_property_contexts"))
 		return true;
 
+	/* 5. Private media library probed for custom ROM symbols */
+	if (strstr(p, "libstagefright.so"))
+		return true;
+
+	/* 6. Concealed / Dangerous App paths probed via FUSE or direct stat across process boundaries */
+	if (strstr(p, "com.termux") || strstr(p, "org.lsposed.manager") ||
+	    strstr(p, "org.lsposed.lspatch") || strstr(p, "com.topjohnwu.magisk") ||
+	    strstr(p, "io.github.vvb2060.magisk") || strstr(p, "com.tsng.hidemyapplist") ||
+	    strstr(p, "com.tsng.pzyhrx.hma") || strstr(p, "com.topmiaohan.hidebllist") ||
+	    strstr(p, "bin.mt.termex") || strstr(p, "com.rifsxd.ksunext")) {
+		if (!strncmp(current->comm, "com.termux", 10) ||
+		    !strcmp(current->comm, "sh") || !strcmp(current->comm, "bash") ||
+		    !strcmp(current->comm, "zsh") || !strcmp(current->comm, "login") ||
+		    !strcmp(current->comm, "tmux") || !strcmp(current->comm, "termux") ||
+		    !strncmp(current->comm, "org.lsposed", 11) ||
+		    !strncmp(current->comm, "com.topjohnwu", 13) ||
+		    !strncmp(current->comm, "com.tsng", 8) ||
+		    !strncmp(current->comm, "bin.mt", 6)) {
+			return false;
+		}
+		return true;
+	}
+
 	return false;
 }
 #endif
