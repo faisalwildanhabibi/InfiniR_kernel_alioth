@@ -31,6 +31,9 @@
 #include <linux/ima.h>
 #include <linux/dnotify.h>
 #include <linux/compat.h>
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs.h>
+#endif
 
 #include "internal.h"
 
@@ -132,6 +135,21 @@ long do_sys_truncate(const char __user *pathname, loff_t length)
 
 	if (length < 0)	/* sorry, but loff_t says... */
 		return -EINVAL;
+
+#ifdef CONFIG_KSU_SUSFS
+	/* Anti-supercall latency probe guard:
+	 * Detectors ping syscall 45 (__NR_truncate) with dummy 128-byte non-existent strings
+	 * and compare latency against empty string \0.
+	 * Fast-return -ENOENT for dummy probing strings from unprivileged apps (UID >= 10000).
+	 */
+	if (current_uid().val >= 10000 && pathname) {
+		char probe_hdr[4];
+		if (copy_from_user(probe_hdr, pathname, sizeof(probe_hdr)) == 0) {
+			if (probe_hdr[0] == 'A' && probe_hdr[1] == 'A' && probe_hdr[2] == 'A')
+				return -ENOENT;
+		}
+	}
+#endif
 
 retry:
 	error = user_path_at(AT_FDCWD, pathname, lookup_flags, &path);

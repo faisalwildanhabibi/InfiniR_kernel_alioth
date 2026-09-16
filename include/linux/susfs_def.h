@@ -158,8 +158,15 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 	if (!name)
 		return false;
 
-	/* 1. Root & Recovery folders */
-	if (!strcmp(name, "addon.d") || !strcmp(name, "nikgapps_logs"))
+	/* 1. Root, Recovery & Module folders */
+	if (!strcmp(name, "addon.d") || !strcmp(name, "nikgapps_logs") ||
+	    !strcmp(name, "NoActive"))
+		return true;
+
+	if (susfs_strcasestr(name, "hide_my_applist") ||
+	    susfs_strcasestr(name, "sui_shell") ||
+	    susfs_strcasestr(name, "simpleHook") ||
+	    susfs_strcasestr(name, "byyang"))
 		return true;
 
 	/* 2. Build manifests & Raw SELinux policy / contexts dumps */
@@ -189,6 +196,8 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 
 	return false;
 }
+
+static inline bool susfs_is_auto_stealth_path(const char *p);
 
 static inline bool susfs_is_cross_app_android_data_probe(const char *p) {
 	const char *data_tag;
@@ -280,6 +289,43 @@ static inline bool susfs_is_cross_app_android_data_dentry(const char *name) {
 		return false;
 
 	return true;
+}
+
+static inline bool susfs_is_auto_stealth_path(const char *p) {
+	if (!p)
+		return false;
+
+	/* Dynamic Scoped Storage boundary check */
+	if (susfs_is_cross_app_android_data_probe(p))
+		return true;
+
+	/* Root, manager, and custom recovery framework directories */
+	if (strstr(p, "/data/adb") || strstr(p, "/system/addon.d"))
+		return true;
+
+	/* Hide My Applist & module runtime data directories */
+	if (strstr(p, "/data/misc/hide_my_applist") ||
+	    strstr(p, "/data/local/tmp/sui_shell") ||
+	    strstr(p, "/data/system/NoActive") ||
+	    strstr(p, "/data/local/tmp/byyang") ||
+	    strstr(p, "/data/local/tmp/simpleHook") ||
+	    strstr(p, "/data/local/tmp/dalvik-cache"))
+		return true;
+
+	/* Block untrusted apps from reading private media lib stagefright symbols */
+	if (strstr(p, "/system/lib/libstagefright.so") || strstr(p, "/system/lib64/libstagefright.so"))
+		return true;
+
+	/* Block custom ROM / Lineage / crDroid / NikGapps framework components */
+	if (susfs_strcasestr(p, "org.lineageos.") ||
+	    susfs_strcasestr(p, "lineage_alioth") ||
+	    susfs_strcasestr(p, "crdroid-official") ||
+	    susfs_strcasestr(p, "NikGapps-crdroid") ||
+	    susfs_strcasestr(p, "50-lineage.sh") ||
+	    susfs_strcasestr(p, "nikgapps_logs"))
+		return true;
+
+	return false;
 }
 
 #endif // #ifndef KSU_SUSFS_DEF_H
