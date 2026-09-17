@@ -178,11 +178,8 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 	    susfs_strcasestr(name, "vector_"))
 		return true;
 
-	/* 3. Build manifests & Raw SELinux policy / contexts dumps */
-	if (!strcmp(name, "build-manifest.xml") || !strcmp(name, "build_flags.json") ||
-	    !strcmp(name, "vendor_sepolicy.cil") || !strcmp(name, "system_ext_sepolicy.cil") ||
-	    !strcmp(name, "vendor_file_contexts") || !strcmp(name, "system_ext_property_contexts") ||
-	    !strcmp(name, "libstagefright.so"))
+	/* 3. Media library symbol protection */
+	if (!strcmp(name, "libstagefright.so"))
 		return true;
 
 	/* 4. Target system ROM package prefixes & sysconfig / privapp signatures */
@@ -206,12 +203,11 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 	    susfs_strcasestr(name, "Logs-NikGapps"))
 		return true;
 
-	/* 5. System Init & VINTF files containing .lineage */
+	/* 5. System Init scripts containing .lineage */
 	if (susfs_strcasestr(name, ".lineage.") ||
 	    susfs_strcasestr(name, ".lineage-") ||
 	    !strncmp(name, "init.lineage", 12) ||
-	    susfs_strcasestr(name, ".lineage.rc") ||
-	    susfs_strcasestr(name, ".lineage.xml"))
+	    susfs_strcasestr(name, ".lineage.rc"))
 		return true;
 
 	/* 6. RRO overlay signatures */
@@ -365,17 +361,11 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 		    strstr(p, "/app/") || strstr(p, "/priv-app/") ||
 		    strstr(p, "/etc/permissions/") || strstr(p, "/etc/sysconfig/") ||
 		    strstr(p, "/etc/default-permissions/") || strstr(p, "/etc/init/") ||
-		    strstr(p, "/etc/vintf/") || strstr(p, "/lib64/vendor.lineage") ||
+		    strstr(p, "/lib64/vendor.lineage") ||
 		    strstr(p, "/nikgapps_logs") || strstr(p, "50-lineage.sh") ||
 		    strstr(p, "SetupWizard.prop") || strstr(p, "MiuiCameraOverlayAosp"))
 			return true;
 	}
-
-	/* 6. Build Manifest, Build Flags & Raw SELinux Policy Dumps */
-	if (strstr(p, "/build-manifest.xml") || strstr(p, "/build_flags.json") ||
-	    strstr(p, "vendor_sepolicy.cil") || strstr(p, "system_ext_sepolicy.cil") ||
-	    strstr(p, "vendor_file_contexts") || strstr(p, "system_ext_property_contexts"))
-		return true;
 
 	return false;
 }
