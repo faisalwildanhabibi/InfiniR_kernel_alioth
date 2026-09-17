@@ -160,7 +160,10 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 
 	/* 1. Root, Recovery & Module exact names */
 	if (!strcmp(name, "50-lineage.sh") || !strcmp(name, "crdroid-res.apk") ||
-	    !strcmp(name, "LineageSettingsProvider.apk") || !strcmp(name, "addon.d") ||
+	    !strcmp(name, "LineageSettingsProvider.apk") || !strcmp(name, "LineageParts.apk") ||
+	    !strcmp(name, "LineageParts") || !strcmp(name, "LineageSettingsProvider") ||
+	    !strcmp(name, "LineageSetupWizard") || !strcmp(name, "MiuiCameraOverlayAosp.apk") ||
+	    !strcmp(name, "SetupWizard.prop") || !strcmp(name, "addon.d") ||
 	    !strcmp(name, "nikgapps_logs") || !strcmp(name, "NoActive"))
 		return true;
 
@@ -178,22 +181,36 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 	    !strcmp(name, "libstagefright.so"))
 		return true;
 
-	/* 4. Target system ROM package prefixes & RRO overlay naming signatures */
-	if (!strncmp(name, "org.lineageos.", 14) ||
-	    !strncmp(name, "org.crdroid.", 12) ||
-	    !strncmp(name, "org.omnirom.", 12) ||
-	    !strncmp(name, "co.aospa.", 9) ||
-	    !strncmp(name, "org.protonaosp.", 15) ||
-	    !strncmp(name, "org.chaldeaprjkt.", 17) ||
-	    !strncmp(name, "org.evolution.", 14) ||
-	    !strncmp(name, "org.havoc.", 10) ||
-	    !strncmp(name, "org.resurrection.", 17) ||
-	    !strncmp(name, "vendor.lineage.", 15) ||
-	    !strncmp(name, "lineage-sdk", 11) ||
-	    !strncasecmp(name, "Logs-alioth-NikGapps", 20) ||
-	    !strncasecmp(name, "Logs-NikGapps", 13))
+	/* 4. Target system ROM package prefixes & sysconfig / privapp signatures */
+	if (susfs_strcasestr(name, "org.lineageos.") ||
+	    susfs_strcasestr(name, "org.crdroid.") ||
+	    susfs_strcasestr(name, "org.omnirom.") ||
+	    susfs_strcasestr(name, "co.aospa.") ||
+	    susfs_strcasestr(name, "org.protonaosp.") ||
+	    susfs_strcasestr(name, "org.chaldeaprjkt.") ||
+	    susfs_strcasestr(name, "org.evolution.") ||
+	    susfs_strcasestr(name, "org.havoc.") ||
+	    susfs_strcasestr(name, "org.resurrection.") ||
+	    susfs_strcasestr(name, "vendor.lineage.") ||
+	    susfs_strcasestr(name, "lineage-sdk") ||
+	    susfs_strcasestr(name, "lineage-sysconfig") ||
+	    susfs_strcasestr(name, "lineage-component-overrides") ||
+	    susfs_strcasestr(name, "crdroid-product") ||
+	    susfs_strcasestr(name, "lineageparts") ||
+	    susfs_strcasestr(name, "lineagesettings") ||
+	    susfs_strcasestr(name, "Logs-alioth-NikGapps") ||
+	    susfs_strcasestr(name, "Logs-NikGapps"))
 		return true;
 
+	/* 5. System Init & VINTF files containing .lineage */
+	if (susfs_strcasestr(name, ".lineage.") ||
+	    susfs_strcasestr(name, ".lineage-") ||
+	    !strncmp(name, "init.lineage", 12) ||
+	    susfs_strcasestr(name, ".lineage.rc") ||
+	    susfs_strcasestr(name, ".lineage.xml"))
+		return true;
+
+	/* 6. RRO overlay signatures */
 	if (strstr(name, "__lineage_") || strstr(name, "__crdroid_") ||
 	    strstr(name, "__aosp_") || strstr(name, "__auto_generated_rro"))
 		return true;
@@ -345,7 +362,8 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 		    strstr(p, "/etc/permissions/") || strstr(p, "/etc/sysconfig/") ||
 		    strstr(p, "/etc/default-permissions/") || strstr(p, "/etc/init/") ||
 		    strstr(p, "/etc/vintf/") || strstr(p, "/lib64/vendor.lineage") ||
-		    strstr(p, "/nikgapps_logs") || strstr(p, "50-lineage.sh"))
+		    strstr(p, "/nikgapps_logs") || strstr(p, "50-lineage.sh") ||
+		    strstr(p, "SetupWizard.prop") || strstr(p, "MiuiCameraOverlayAosp"))
 			return true;
 	}
 
