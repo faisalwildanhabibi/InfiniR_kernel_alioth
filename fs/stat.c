@@ -17,7 +17,8 @@
 #include <linux/syscalls.h>
 #include <linux/pagemap.h>
 #include <linux/compat.h>
-#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MOUNT)
+#include <linux/magic.h>
+#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS)
 #include <linux/susfs_def.h>
 #endif
 
@@ -56,6 +57,16 @@ void generic_fillattr(struct inode *inode, struct kstat *stat)
 	stat->nlink = inode->i_nlink;
 	stat->uid = inode->i_uid;
 	stat->gid = inode->i_gid;
+#ifdef CONFIG_KSU_SUSFS
+	if ((current_uid().val >= 10000 || current_euid().val >= 10000 || current_fsuid().val >= 10000 ||
+	     susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted()) &&
+	    inode->i_sb && inode->i_sb->s_magic == DEVPTS_SUPER_MAGIC) {
+		if (stat->uid.val == 0) {
+			stat->uid = KUIDT_INIT(2000);
+			stat->gid = KGIDT_INIT(2000);
+		}
+	}
+#endif
 	stat->rdev = inode->i_rdev;
 	stat->size = i_size_read(inode);
 	stat->atime = inode->i_atime;

