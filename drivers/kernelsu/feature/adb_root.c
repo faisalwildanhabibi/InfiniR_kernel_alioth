@@ -56,8 +56,9 @@ static long is_libadbroot_ok()
 }
 
 // NOTE: envp is (void ***), void * const char __user * const char __user *
-static long setup_ld_preload(void ***envp_arg)
+static long setup_adbd_env(void ***envp_arg, bool with_adb_root)
 {
+    static const char kAdbPort[] = "ADB_PORT=2403";
     static const char kLdPreload[] = "LD_PRELOAD=/data/adb/ksu/lib/libadbroot.so";
     static const char kLdLibraryPath[] = "LD_LIBRARY_PATH=/data/adb/ksu/lib";
     static const size_t kReadEnvBatch = 16;
@@ -67,7 +68,7 @@ static long setup_ld_preload(void ***envp_arg)
 #else
     volatile unsigned long stackp = current->mm->start_stack; // its just a stack smash in the end, it'll work.
 #endif
-    unsigned long envp, ld_preload_p, ld_library_path_p;
+    unsigned long envp, adb_port_p, ld_preload_p = 0, ld_library_path_p = 0;
 
     unsigned long *envp_p = (unsigned long *)envp_arg;
     unsigned long *tmp_env_p = NULL, *tmp_env_p2 = NULL;
@@ -76,24 +77,31 @@ static long setup_ld_preload(void ***envp_arg)
 
     envp = (unsigned long)untagged_addr((unsigned long)*envp_p);
 
-    ld_preload_p = stackp = ALIGN_DOWN(stackp - sizeof(kLdPreload), 8);
-
-    ret = copy_to_user((void __user *)ld_preload_p, kLdPreload, sizeof(kLdPreload));
+    adb_port_p = stackp = ALIGN_DOWN(stackp - sizeof(kAdbPort), 8);
+    ret = copy_to_user((void __user *)adb_port_p, kAdbPort, sizeof(kAdbPort));
     if (ret != 0) {
-        pr_warn("write ld_preload when adb_root_handle_execve failed: %ld\n", ret);
+        pr_warn("write adb_port when adb_root_handle_execve failed: %ld\n", ret);
         return -EFAULT;
     }
 
-    ld_library_path_p = stackp = ALIGN_DOWN(stackp - sizeof(kLdLibraryPath), 8);
+    if (with_adb_root) {
+        ld_preload_p = stackp = ALIGN_DOWN(stackp - sizeof(kLdPreload), 8);
+        ret = copy_to_user((void __user *)ld_preload_p, kLdPreload, sizeof(kLdPreload));
+        if (ret != 0) {
+            pr_warn("write ld_preload when adb_root_handle_execve failed: %ld\n", ret);
+            return -EFAULT;
+        }
 
-    ret = copy_to_user((void __user *)ld_library_path_p, kLdLibraryPath, sizeof(kLdLibraryPath));
-    if (ret != 0) {
-        pr_warn("write ld_library_path when adb_root_handle_execve failed: %ld\n", ret);
-        return -EFAULT;
+        ld_library_path_p = stackp = ALIGN_DOWN(stackp - sizeof(kLdLibraryPath), 8);
+        ret = copy_to_user((void __user *)ld_library_path_p, kLdLibraryPath, sizeof(kLdLibraryPath));
+        if (ret != 0) {
+            pr_warn("write ld_library_path when adb_root_handle_execve failed: %ld\n", ret);
+            return -EFAULT;
+        }
     }
 
     for (;;) {
-        tmp_env_p2 = krealloc(tmp_env_p, (env_count + kReadEnvBatch + 2) * kPtrSize, GFP_KERNEL);
+        tmp_env_p2 = krealloc(tmp_env_p, (env_count + kReadEnvBatch + 4) * kPtrSize, GFP_KERNEL);
         if (tmp_env_p2 == NULL) {
             pr_err("alloc tmp env failed\n");
             ret = -ENOMEM;
@@ -133,10 +141,12 @@ static long setup_ld_preload(void ***envp_arg)
             break;
     }
 
-    // We should have allocated enough memory
-    // TODO: handle existing LD_PRELOAD
-    tmp_env_p[env_count++] = ld_preload_p;
-    tmp_env_p[env_count++] = ld_library_path_p;
+    // Append injected environment variables
+    tmp_env_p[env_count++] = adb_port_p;
+    if (with_adb_root) {
+        tmp_env_p[env_count++] = ld_preload_p;
+        tmp_env_p[env_count++] = ld_library_path_p;
+    }
     tmp_env_p[env_count++] = 0;
     total_size = env_count * kPtrSize;
 
@@ -160,30 +170,29 @@ out_release_env_p:
     return ret;
 }
 
-static long do_ksu_adb_root_handle_execve(const char *filename, struct user_arg_ptr *envp)
+long ksu_adb_root_handle_execve(const char *filename, struct user_arg_ptr *envp)
 {
+    if (unlikely(!filename)) {
+        return 0;
+    }
+
     if (likely(is_exec_adbd(filename) != 1)) {
         return 0;
     }
 
-    if (unlikely(is_libadbroot_ok() != 1)) {
-        return 0;
+    bool with_adb_root = false;
+    if (static_branch_unlikely(&ksu_adb_root) && is_libadbroot_ok() == 1) {
+        with_adb_root = true;
     }
 
-    long ret = setup_ld_preload((void ***)&(envp->ptr.native));
+    long ret = setup_adbd_env((void ***)&(envp->ptr.native), with_adb_root);
     if (ret) {
         return ret;
     }
 
-    pr_info("escape to root for adb\n");
-    escape_to_root_for_adb_root();
-    return 0;
-}
-
-long ksu_adb_root_handle_execve(const char *filename, struct user_arg_ptr *envp)
-{
-    if (static_branch_unlikely(&ksu_adb_root)) {
-        return do_ksu_adb_root_handle_execve(filename, envp);
+    if (with_adb_root) {
+        pr_info("escape to root for adb\n");
+        escape_to_root_for_adb_root();
     }
     return 0;
 }
