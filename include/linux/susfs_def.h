@@ -164,14 +164,18 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 	    !strcmp(name, "LineageParts") || !strcmp(name, "LineageSettingsProvider") ||
 	    !strcmp(name, "LineageSetupWizard") || !strcmp(name, "MiuiCameraOverlayAosp.apk") ||
 	    !strcmp(name, "SetupWizard.prop") || !strcmp(name, "addon.d") ||
-	    !strcmp(name, "nikgapps_logs") || !strcmp(name, "NoActive"))
+	    !strcmp(name, "nikgapps_logs") || !strcmp(name, "NoActive") ||
+	    !strcmp(name, "lspd") || !strcmp(name, "zygisk_vector") ||
+	    !strcmp(name, "vector.dex") || !strcmp(name, "liboat_hook64.so") ||
+	    !strcmp(name, "liboat_hook32.so"))
 		return true;
 
 	/* 2. SUI / HMA / Hook module residue signatures */
 	if (susfs_strcasestr(name, "hide_my_applist") ||
 	    susfs_strcasestr(name, "sui_shell") ||
 	    susfs_strcasestr(name, "simpleHook") ||
-	    susfs_strcasestr(name, "byyang"))
+	    susfs_strcasestr(name, "byyang") ||
+	    susfs_strcasestr(name, "vector_"))
 		return true;
 
 	/* 3. Build manifests & Raw SELinux policy / contexts dumps */

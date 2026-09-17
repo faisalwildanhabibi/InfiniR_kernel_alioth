@@ -604,7 +604,9 @@ static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
 #ifdef CONFIG_KSU_SUSFS
 	if ((current_uid().val >= 10000 || susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted()) && buf) {
 		if (strstr(buf, "ksu") || strstr(buf, "magisk") || strstr(buf, "zygisk") ||
-		    strstr(buf, "sui") || strstr(buf, "lsposed") || strstr(buf, "adbroot")) {
+		    strstr(buf, "sui") || strstr(buf, "lsposed") || strstr(buf, "xposed") ||
+		    strstr(buf, "vector") || strstr(buf, "droidspaces") || strstr(buf, "msd_") ||
+		    strstr(buf, "adbroot")) {
 			return -EINVAL;
 		}
 	}
@@ -855,9 +857,13 @@ static ssize_t sel_write_access(struct file *file, char *buf, size_t size)
 #ifdef CONFIG_KSU_SUSFS
 	if (current_uid().val >= 10000 || susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted()) {
 		if ((scon && (strstr(scon, "ksu") || strstr(scon, "magisk") || strstr(scon, "zygisk") ||
-		              strstr(scon, "sui") || strstr(scon, "lsposed") || strstr(scon, "adbroot"))) ||
+		              strstr(scon, "sui") || strstr(scon, "lsposed") || strstr(scon, "xposed") ||
+		              strstr(scon, "vector") || strstr(scon, "droidspaces") || strstr(scon, "msd_") ||
+		              strstr(scon, "adbroot"))) ||
 		    (tcon && (strstr(tcon, "ksu") || strstr(tcon, "magisk") || strstr(tcon, "zygisk") ||
-		              strstr(tcon, "sui") || strstr(tcon, "lsposed") || strstr(tcon, "adbroot")))) {
+		              strstr(tcon, "sui") || strstr(tcon, "lsposed") || strstr(tcon, "xposed") ||
+		              strstr(tcon, "vector") || strstr(tcon, "droidspaces") || strstr(tcon, "msd_") ||
+		              strstr(tcon, "adbroot")))) {
 			length = -EINVAL;
 			goto out;
 		}
@@ -884,6 +890,8 @@ static ssize_t sel_write_access(struct file *file, char *buf, size_t size)
 			} else if (strstr(scon, "system_server") && strstr(tcon, "system_server") && tclass == SECCLASS_PROCESS) {
 				avd.allowed &= ~PROCESS__EXECMEM;
 			} else if (strstr(scon, "fsck_untrusted") || strstr(tcon, "fsck_untrusted")) {
+				avd.allowed = 0;
+			} else if (strstr(scon, "untrusted_app") && (strstr(tcon, "xposed") || strstr(tcon, "vector") || strstr(tcon, "droidspaces") || strstr(tcon, "msd_"))) {
 				avd.allowed = 0;
 			}
 		}
