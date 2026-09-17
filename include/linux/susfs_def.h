@@ -329,9 +329,9 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 	    strstr(p, "/dev/__properties__/u:object_r:qemu_hw_prop:s0"))
 		return true;
 
-	/* 2. Dynamic Shell Temp Protection: Untrusted apps have no access to /data/local/tmp.
-	 * Hides ALL temp root binaries, module sockets, daemon helper files, and exploits dynamically. */
-	if (strstr(p, "/data/local/tmp/") || !strcmp(p, "/data/local/tmp"))
+	/* 2. Dynamic Shell Temp Protection: Untrusted apps cannot see contents of /data/local/tmp.
+	 * Directory itself remains PRESENT naturally, but all payload files inside are isolated (-ENOENT). */
+	if (strstr(p, "/data/local/tmp/"))
 		return true;
 
 	/* 3. Module runtime data directories in /data/misc and /data/system */
