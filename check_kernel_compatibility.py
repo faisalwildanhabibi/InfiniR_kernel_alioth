@@ -85,7 +85,7 @@ def log_info(msg: str):
 
 
 def get_or_download_reference(ref_path_or_url: str, cache_dir: str) -> str:
-    """Download reference zip if given a URL or verify local path."""
+    """Download reference zip if given a URL or verify local path with retries."""
     if os.path.exists(ref_path_or_url):
         return ref_path_or_url
     
@@ -98,10 +98,22 @@ def get_or_download_reference(ref_path_or_url: str, cache_dir: str) -> str:
         return os.path.abspath("InfiniR_Alioth_v3.00_KSUN_raystef66.zip")
 
     log_info(f"Downloading reference zip from {ref_path_or_url} ...")
-    req = urllib.request.Request(ref_path_or_url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req) as resp, open(local_cached, "wb") as out:
-        shutil.copyfileobj(resp, out)
-    log_info(f"Reference zip saved ({os.path.getsize(local_cached)} bytes)")
+    max_retries = 5
+    for attempt in range(1, max_retries + 1):
+        try:
+            req = urllib.request.Request(ref_path_or_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req, timeout=60) as resp, open(local_cached, "wb") as out:
+                shutil.copyfileobj(resp, out)
+            if os.path.exists(local_cached) and os.path.getsize(local_cached) > 10_000_000:
+                log_info(f"Reference zip saved ({os.path.getsize(local_cached)} bytes)")
+                return local_cached
+        except Exception as e:
+            log_warn(f"Download attempt {attempt}/{max_retries} failed: {e}")
+            if attempt < max_retries:
+                time.sleep(3 * attempt)
+            else:
+                log_warn("Unable to download reference zip after retries. Proceeding without reference comparison.")
+                return ""
     return local_cached
 
 
