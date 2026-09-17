@@ -699,6 +699,10 @@ static inline int kallsyms_for_perf(void)
  */
 bool kallsyms_show_value(const struct cred *cred)
 {
+	/* Anti-Detection / Hardening: never reveal kernel symbol addresses to non-root apps */
+	if (!uid_eq(cred->uid, GLOBAL_ROOT_UID) || !uid_eq(cred->euid, GLOBAL_ROOT_UID))
+		return false;
+
 	switch (kptr_restrict) {
 	case 0:
 		if (kallsyms_for_perf())
