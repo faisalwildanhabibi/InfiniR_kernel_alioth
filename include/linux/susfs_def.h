@@ -158,40 +158,44 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 	if (!name)
 		return false;
 
-	/* 1. Root, Recovery & Module folders */
-	if (!strcmp(name, "addon.d") || !strcmp(name, "nikgapps_logs") ||
-	    !strcmp(name, "NoActive"))
+	/* 1. Root, Recovery & Module exact names */
+	if (!strcmp(name, "50-lineage.sh") || !strcmp(name, "crdroid-res.apk") ||
+	    !strcmp(name, "LineageSettingsProvider.apk") || !strcmp(name, "addon.d") ||
+	    !strcmp(name, "nikgapps_logs") || !strcmp(name, "NoActive"))
 		return true;
 
+	/* 2. SUI / HMA / Hook module residue signatures */
 	if (susfs_strcasestr(name, "hide_my_applist") ||
 	    susfs_strcasestr(name, "sui_shell") ||
 	    susfs_strcasestr(name, "simpleHook") ||
 	    susfs_strcasestr(name, "byyang"))
 		return true;
 
-	/* 2. Build manifests & Raw SELinux policy / contexts dumps */
+	/* 3. Build manifests & Raw SELinux policy / contexts dumps */
 	if (!strcmp(name, "build-manifest.xml") || !strcmp(name, "build_flags.json") ||
 	    !strcmp(name, "vendor_sepolicy.cil") || !strcmp(name, "system_ext_sepolicy.cil") ||
 	    !strcmp(name, "vendor_file_contexts") || !strcmp(name, "system_ext_property_contexts") ||
 	    !strcmp(name, "libstagefright.so"))
 		return true;
 
-	/* 3. Custom ROM, Lineage, crDroid, AOSP, NikGapps artifacts */
-	if (susfs_strcasestr(name, "lineage") ||
-	    susfs_strcasestr(name, "crdroid") ||
-	    susfs_strcasestr(name, "nikgapps") ||
-	    susfs_strcasestr(name, "omnijaws") ||
-	    susfs_strcasestr(name, "omnistyle") ||
-	    susfs_strcasestr(name, "omnirom") ||
-	    susfs_strcasestr(name, "protonaosp") ||
-	    susfs_strcasestr(name, "chaldeaprjkt") ||
-	    susfs_strcasestr(name, "co.aospa") ||
-	    susfs_strcasestr(name, "aospa") ||
-	    susfs_strcasestr(name, "aosp") ||
-	    susfs_strcasestr(name, "paranoid") ||
-	    susfs_strcasestr(name, "evolution_") ||
-	    susfs_strcasestr(name, "havoc") ||
-	    susfs_strcasestr(name, "resurrection"))
+	/* 4. Target system ROM package prefixes & RRO overlay naming signatures */
+	if (!strncmp(name, "org.lineageos.", 14) ||
+	    !strncmp(name, "org.crdroid.", 12) ||
+	    !strncmp(name, "org.omnirom.", 12) ||
+	    !strncmp(name, "co.aospa.", 9) ||
+	    !strncmp(name, "org.protonaosp.", 15) ||
+	    !strncmp(name, "org.chaldeaprjkt.", 17) ||
+	    !strncmp(name, "org.evolution.", 14) ||
+	    !strncmp(name, "org.havoc.", 10) ||
+	    !strncmp(name, "org.resurrection.", 17) ||
+	    !strncmp(name, "vendor.lineage.", 15) ||
+	    !strncmp(name, "lineage-sdk", 11) ||
+	    !strncasecmp(name, "Logs-alioth-NikGapps", 20) ||
+	    !strncasecmp(name, "Logs-NikGapps", 13))
+		return true;
+
+	if (strstr(name, "__lineage_") || strstr(name, "__crdroid_") ||
+	    strstr(name, "__aosp_") || strstr(name, "__auto_generated_rro"))
 		return true;
 
 	return false;
