@@ -367,6 +367,17 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 			return true;
 	}
 
+	/* 6. SELinux Policy & File Contexts: Block unprivileged apps (UID >= 10000) from reading SELinux policy files containing ROM artifacts */
+	if (current_uid().val >= 10000 || susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted()) {
+		if (strstr(p, "/etc/selinux/vendor_sepolicy.cil") ||
+		    strstr(p, "/etc/selinux/system_ext_sepolicy.cil") ||
+		    strstr(p, "/etc/selinux/vendor_file_contexts") ||
+		    strstr(p, "/etc/selinux/system_ext_file_contexts") ||
+		    strstr(p, "/etc/selinux/plat_sepolicy.cil") ||
+		    strstr(p, "/etc/selinux/plat_file_contexts"))
+			return true;
+	}
+
 	return false;
 }
 
