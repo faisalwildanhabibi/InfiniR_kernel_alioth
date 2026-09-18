@@ -105,6 +105,14 @@
 #define ND_STATE_LAST_SDCARD_SUS_PATH 128
 #define ND_FLAGS_LOOKUP_LAST 0x2000000
 
+static inline bool susfs_is_untrusted_app_process(void) {
+	/* In Android AOSP, unprivileged third-party apps always have AID_APP_START = 10000 (per user: uid % 100000 >= 10000) */
+	uid_t app_id = current_uid().val % 100000;
+	if (app_id < 10000)
+		return false;
+	return true;
+}
+
 static inline bool susfs_is_current_non_root_user_app_proc(void) {
 	return test_ti_thread_flag(&current->thread_info, TIF_NON_ROOT_USER_APP_PROC);
 }
@@ -134,7 +142,7 @@ static inline void susfs_clear_current_proc_umounted(void) {
 }
 
 static inline bool susfs_is_current_proc_umounted_app(void) {
-	return test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED) && current_uid().val >= 10000;
+	return test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED) && (current_uid().val % 100000) >= 10000;
 }
 
 static inline const char *susfs_strcasestr(const char *haystack, const char *needle) {
@@ -155,7 +163,7 @@ static inline const char *susfs_strcasestr(const char *haystack, const char *nee
 }
 
 static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
-	if (!name)
+	if (!name || !susfs_is_untrusted_app_process())
 		return false;
 
 	/* 1. Root, Recovery & Module exact names */
@@ -227,11 +235,7 @@ static inline bool susfs_is_cross_app_android_data_probe(const char *p) {
 	char pkg_buf[64];
 	size_t comm_len;
 
-	if (!p)
-		return false;
-
-	/* Only apply for unprivileged apps / non-root / isolated processes (UID >= 10000) */
-	if (current_uid().val < 10000 && !susfs_is_current_non_root_user_app_proc() && !susfs_is_current_proc_umounted())
+	if (!p || !susfs_is_untrusted_app_process())
 		return false;
 
 	/* Shell / Terminal environments have universal access */
@@ -285,11 +289,7 @@ static inline bool susfs_is_cross_app_android_data_probe(const char *p) {
 
 static inline bool susfs_is_cross_app_android_data_dentry(const char *name) {
 	size_t nam_len, comm_len;
-	if (!name)
-		return false;
-
-	/* Only filter for unprivileged apps / non-root / isolated processes (UID >= 10000) */
-	if (current_uid().val < 10000 && !susfs_is_current_non_root_user_app_proc() && !susfs_is_current_proc_umounted())
+	if (!name || !susfs_is_untrusted_app_process())
 		return false;
 
 	/* Shell / Terminal environments have universal access */
@@ -313,7 +313,7 @@ static inline bool susfs_is_cross_app_android_data_dentry(const char *name) {
 }
 
 static inline bool susfs_is_auto_stealth_path(const char *p) {
-	if (!p)
+	if (!p || !susfs_is_untrusted_app_process())
 		return false;
 
 	/* Dynamic Scoped Storage boundary check (blocks cross-app probing without package lists) */
@@ -368,15 +368,13 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 	}
 
 	/* 6. SELinux Policy & File Contexts: Block unprivileged apps (UID >= 10000) from reading SELinux policy files containing ROM artifacts */
-	if (current_uid().val >= 10000 || susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted()) {
-		if (strstr(p, "/etc/selinux/vendor_sepolicy.cil") ||
-		    strstr(p, "/etc/selinux/system_ext_sepolicy.cil") ||
-		    strstr(p, "/etc/selinux/vendor_file_contexts") ||
-		    strstr(p, "/etc/selinux/system_ext_file_contexts") ||
-		    strstr(p, "/etc/selinux/plat_sepolicy.cil") ||
-		    strstr(p, "/etc/selinux/plat_file_contexts"))
-			return true;
-	}
+	if (strstr(p, "/etc/selinux/vendor_sepolicy.cil") ||
+	    strstr(p, "/etc/selinux/system_ext_sepolicy.cil") ||
+	    strstr(p, "/etc/selinux/vendor_file_contexts") ||
+	    strstr(p, "/etc/selinux/system_ext_file_contexts") ||
+	    strstr(p, "/etc/selinux/plat_sepolicy.cil") ||
+	    strstr(p, "/etc/selinux/plat_file_contexts"))
+		return true;
 
 	return false;
 }

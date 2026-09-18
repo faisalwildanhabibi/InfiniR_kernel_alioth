@@ -2650,7 +2650,7 @@ static int filename_lookup(int dfd, struct filename *name, unsigned flags,
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if ((current_uid().val >= 10000 || susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted()) &&
+	if (susfs_is_untrusted_app_process() &&
 	    name && name->name && susfs_is_auto_stealth_path(name->name))
 		return -ENOENT;
 #endif
@@ -4034,7 +4034,7 @@ struct file *do_filp_open(int dfd, struct filename *pathname,
 	int flags = op->lookup_flags;
 	struct file *filp;
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if ((current_uid().val >= 10000 || susfs_is_current_non_root_user_app_proc() || susfs_is_current_proc_umounted()) &&
+	if (susfs_is_untrusted_app_process() &&
 	    pathname && pathname->name && susfs_is_auto_stealth_path(pathname->name))
 		return ERR_PTR(-ENOENT);
 #endif
