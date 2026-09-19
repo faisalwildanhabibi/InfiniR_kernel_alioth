@@ -73,6 +73,12 @@ jobs:
           echo "KSU_VERSION_TAG=$KSU_VER" >> $GITHUB_ENV
           echo "KSU_GIT_VERSION=$KSU_COUNT" >> $GITHUB_ENV
 
+      - name: Pre-Build Source Compatibility & Architecture Verification
+        run: |
+          python3 check_kernel_compatibility.py --source-only . --markdown pre_build_compatibility.md
+          echo "### 🔍 Pre-Build Source Compatibility Audit" >> $GITHUB_STEP_SUMMARY
+          cat pre_build_compatibility.md >> $GITHUB_STEP_SUMMARY
+
       - name: Build Kernel
         id: build_kernel
         run: |

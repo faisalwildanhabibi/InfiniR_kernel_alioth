@@ -207,34 +207,50 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 	if (!p || !susfs_is_untrusted_app_process())
 		return false;
 
-	/* CRITICAL ISO/IEC 25010 SAFEGUARD: Never hide core system framework, overlays, and system apk assets */
-	if (strstr(p, "/system/framework") || strstr(p, "/system_ext/framework") ||
-	    strstr(p, "/product/framework") || strstr(p, "/vendor/framework") ||
-	    strstr(p, "/system/overlay") || strstr(p, "/product/overlay") ||
-	    strstr(p, "/vendor/overlay") || strstr(p, "/system_ext/overlay") ||
-	    strstr(p, "org.lineageos.platform-res.apk") || strstr(p, "crdroid-res.apk") ||
-	    strstr(p, "framework-res.apk"))
+	/* Fast Reject for Non-Slash or Empty string */
+	if (p[0] != '/')
 		return false;
 
-	/* 1. Root & Module Infrastructure: Universal hiding for all present and future modules */
-	if (strstr(p, "/data/adb") || strstr(p, "/system/addon.d") ||
-	    strstr(p, "/dev/__properties__/u:object_r:qemu_hw_prop:s0"))
-		return true;
+	/* Fast Branch 1: /system, /system_ext, /product, /vendor */
+	if (p[1] == 's' || p[1] == 'p' || p[1] == 'v') {
+		/* Fast Bypass for core frameworks, resource apks and overlays */
+		if (strstr(p, "/framework") || strstr(p, "/overlay") ||
+		    strstr(p, "-res.apk"))
+			return false;
 
-	/* 2. Dynamic Shell Temp Protection: Untrusted apps cannot see contents of /data/local/tmp */
-	if (strstr(p, "/data/local/tmp/"))
-		return true;
+		if (strstr(p, "/system/addon.d"))
+			return true;
+	}
 
-	/* 3. Module runtime data directories in /data/misc and /data/system */
-	if (strstr(p, "/data/misc/hide_my_applist") ||
-	    strstr(p, "/data/system/NoActive") ||
-	    strstr(p, "/data/misc/zygisk") ||
-	    strstr(p, "/data/misc/magisk"))
-		return true;
+	/* Fast Branch 2: /data paths */
+	if (p[1] == 'd' && p[2] == 'a' && p[3] == 't' && p[4] == 'a' && p[5] == '/') {
+		char sub = p[6];
+		if (sub == 'a' && !strncmp(p + 6, "adb", 3))
+			return true;
+		if (sub == 'l' && strstr(p, "/data/local/tmp/"))
+			return true;
+		if (sub == 'm' && (strstr(p, "/data/misc/hide_my_applist") ||
+				   strstr(p, "/data/misc/zygisk") ||
+				   strstr(p, "/data/misc/magisk")))
+			return true;
+		if (sub == 's' && strstr(p, "/data/system/NoActive"))
+			return true;
+	}
 
-	/* 4. Target custom ROM and recovery artifacts outside framework */
-	if (strstr(p, "/nikgapps_logs") || strstr(p, "50-lineage.sh") ||
-	    strstr(p, "/etc/init/init.lineage"))
+	/* Fast Branch 3: /dev properties */
+	if (p[1] == 'd' && p[2] == 'e' && p[3] == 'v' && p[4] == '/') {
+		if (strstr(p, "/dev/__properties__/u:object_r:qemu_hw_prop:s0"))
+			return true;
+	}
+
+	/* Fast Branch 4: /etc init configs */
+	if (p[1] == 'e' && p[2] == 't' && p[3] == 'c' && p[4] == '/') {
+		if (strstr(p, "/etc/init/init.lineage"))
+			return true;
+	}
+
+	/* Fast Branch 5: custom ROM / logs */
+	if (strstr(p, "/nikgapps_logs") || strstr(p, "50-lineage.sh"))
 		return true;
 
 	return false;

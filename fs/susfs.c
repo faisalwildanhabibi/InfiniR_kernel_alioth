@@ -244,15 +244,17 @@ int susfs_add_sus_mount(struct st_susfs_sus_mount* __user user_info) {
 	info.target_dev = old_decode_dev(info.target_dev);
 #endif
 
+	susfs_update_sus_mount_inode(info.target_pathname);
+
+	spin_lock(&susfs_spin_lock);
 	list_for_each_entry_safe(cursor, temp, &LH_SUS_MOUNT, list) {
 		if (unlikely(!strcmp(cursor->info.target_pathname, info.target_pathname))) {
-			spin_lock(&susfs_spin_lock);
 			memcpy(&cursor->info, &info, sizeof(info));
-			susfs_update_sus_mount_inode(cursor->info.target_pathname);
 			spin_unlock(&susfs_spin_lock);
 			return 0;
 		}
 	}
+	spin_unlock(&susfs_spin_lock);
 
 	new_list = kmalloc(sizeof(struct st_susfs_sus_mount_list), GFP_KERNEL);
 	if (!new_list) {
@@ -261,7 +263,6 @@ int susfs_add_sus_mount(struct st_susfs_sus_mount* __user user_info) {
 	}
 
 	memcpy(&new_list->info, &info, sizeof(info));
-	susfs_update_sus_mount_inode(new_list->info.target_pathname);
 
 	INIT_LIST_HEAD(&new_list->list);
 	spin_lock(&susfs_spin_lock);
@@ -288,6 +289,15 @@ int susfs_auto_add_sus_bind_mount(const char *pathname, struct path *path_target
 		if (inode->i_mapping)
 			set_bit(AS_FLAGS_SUS_MOUNT, &inode->i_mapping->flags);
 	}
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+	if (!(inode->i_state & INODE_STATE_SUS_KSTAT)) {
+		spin_lock(&inode->i_lock);
+		inode->i_state |= INODE_STATE_SUS_KSTAT;
+		spin_unlock(&inode->i_lock);
+		if (inode->i_mapping)
+			set_bit(AS_FLAGS_SUS_KSTAT, &inode->i_mapping->flags);
+	}
+#endif
 	return 0;
 }
 #endif
@@ -436,47 +446,63 @@ out_copy_to_user:
 
 void susfs_update_sus_kstat(void __user **user_info) {
 	struct st_susfs_sus_kstat info = {0};
-	struct st_susfs_sus_kstat_hlist *new_entry, *tmp_entry;
+	struct st_susfs_sus_kstat_hlist *new_entry = NULL, *tmp_entry = NULL, *found_entry = NULL;
 	struct hlist_node *tmp_node;
 	int bkt;
-	int err = 0;
 
 	if (copy_from_user(&info, (struct st_susfs_sus_kstat __user*)*user_info, sizeof(info))) {
 		info.err = -EFAULT;
 		goto out_copy_to_user;
 	}
 
+	if (strlen(info.target_pathname) == 0) {
+		info.err = -EINVAL;
+		goto out_copy_to_user;
+	}
+
+	/* Perform path lookup outside spinlock to prevent sleeping while atomic (ASIL-D / MISRA C) */
+	if (susfs_update_sus_kstat_inode(info.target_pathname)) {
+		info.err = -ENOENT;
+		goto out_copy_to_user;
+	}
+
+	new_entry = kmalloc(sizeof(struct st_susfs_sus_kstat_hlist), GFP_KERNEL);
+	if (!new_entry) {
+		info.err = -ENOMEM;
+		goto out_copy_to_user;
+	}
+
 	spin_lock(&susfs_spin_lock);
 	hash_for_each_safe(SUS_KSTAT_HLIST, bkt, tmp_node, tmp_entry, node) {
 		if (!strcmp(tmp_entry->info.target_pathname, info.target_pathname)) {
-			if (susfs_update_sus_kstat_inode(tmp_entry->info.target_pathname)) {
-				err = -ENOENT;
-				goto out_spin_unlock;
-			}
-			new_entry = kmalloc(sizeof(struct st_susfs_sus_kstat_hlist), GFP_KERNEL);
-			if (!new_entry) {
-				err = -ENOMEM;
-				goto out_spin_unlock;
-			}
-			memcpy(&new_entry->info, &tmp_entry->info, sizeof(tmp_entry->info));
-			new_entry->target_ino = info.target_ino;
-			new_entry->info.target_ino = info.target_ino;
-			if (info.spoofed_size > 0) {
-				new_entry->info.spoofed_size = info.spoofed_size;
-			}
-			if (info.spoofed_blocks > 0) {
-				new_entry->info.spoofed_blocks = info.spoofed_blocks;
-			}
-			hash_del(&tmp_entry->node);
-			kfree(tmp_entry);
-			hash_add(SUS_KSTAT_HLIST, &new_entry->node, info.target_ino);
-			goto out_spin_unlock;
+			found_entry = tmp_entry;
+			break;
 		}
 	}
-	err = -ENOENT;
-out_spin_unlock:
+
+	if (!found_entry) {
+		spin_unlock(&susfs_spin_lock);
+		kfree(new_entry);
+		info.err = -ENOENT;
+		goto out_copy_to_user;
+	}
+
+	memcpy(&new_entry->info, &found_entry->info, sizeof(found_entry->info));
+	new_entry->target_ino = info.target_ino;
+	new_entry->info.target_ino = info.target_ino;
+	if (info.spoofed_size > 0) {
+		new_entry->info.spoofed_size = info.spoofed_size;
+	}
+	if (info.spoofed_blocks > 0) {
+		new_entry->info.spoofed_blocks = info.spoofed_blocks;
+	}
+	hash_del(&found_entry->node);
+	hash_add(SUS_KSTAT_HLIST, &new_entry->node, info.target_ino);
 	spin_unlock(&susfs_spin_lock);
-	info.err = err;
+
+	kfree(found_entry);
+	info.err = 0;
+
 out_copy_to_user:
 	if (copy_to_user(&((struct st_susfs_sus_kstat __user*)*user_info)->err, &info.err, sizeof(info.err))) {
 		info.err = -EFAULT;
@@ -486,6 +512,7 @@ out_copy_to_user:
 void susfs_sus_ino_for_generic_fillattr(unsigned long ino, struct kstat *stat) {
 	struct st_susfs_sus_kstat_hlist *entry;
 
+	rcu_read_lock();
 	hash_for_each_possible(SUS_KSTAT_HLIST, entry, node, ino) {
 		if (entry->target_ino == ino) {
 			stat->dev = entry->info.spoofed_dev;
@@ -499,22 +526,27 @@ void susfs_sus_ino_for_generic_fillattr(unsigned long ino, struct kstat *stat) {
 			stat->ctime.tv_sec = entry->info.spoofed_ctime_tv_sec;
 			stat->ctime.tv_nsec = entry->info.spoofed_ctime_tv_nsec;
 			stat->blocks = entry->info.spoofed_blocks;
-			stat->blksize = entry->info.spoofed_blksize;
+			stat->blksize = entry->info.spoofed_blksize ? entry->info.spoofed_blksize : 4096;
+			rcu_read_unlock();
 			return;
 		}
 	}
+	rcu_read_unlock();
 }
 
 void susfs_sus_ino_for_show_map_vma(unsigned long ino, dev_t *out_dev, unsigned long *out_ino) {
 	struct st_susfs_sus_kstat_hlist *entry;
 
+	rcu_read_lock();
 	hash_for_each_possible(SUS_KSTAT_HLIST, entry, node, ino) {
 		if (entry->target_ino == ino) {
 			*out_dev = entry->info.spoofed_dev;
 			*out_ino = entry->info.spoofed_ino;
+			rcu_read_unlock();
 			return;
 		}
 	}
+	rcu_read_unlock();
 }
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 
@@ -591,7 +623,16 @@ void susfs_auto_add_try_umount_for_bind_mount(struct path *path) {
 	}
 
 	dpath = d_path(path, pathname, PAGE_SIZE);
-	if (!dpath) {
+	if (!dpath || IS_ERR(dpath)) {
+		goto out_free_pathname;
+	}
+
+	/* ISO/IEC 25010 Safety Safeguard: NEVER detach Android FUSE storage, user emulated storage or pass_through views */
+	if (!strncmp(dpath, "/storage", 8) ||
+	    !strncmp(dpath, "/mnt/user", 9) ||
+	    !strncmp(dpath, "/mnt/pass_through", 17) ||
+	    !strncmp(dpath, "/mnt/installer", 14) ||
+	    !strncmp(dpath, "/mnt/androidable", 16)) {
 		goto out_free_pathname;
 	}
 
@@ -607,6 +648,7 @@ void susfs_auto_add_try_umount_for_bind_mount(struct path *path) {
 	}
 
 	strncpy(new_list->info.target_pathname, dpath, SUSFS_MAX_LEN_PATHNAME-1);
+	new_list->info.target_pathname[SUSFS_MAX_LEN_PATHNAME-1] = '\0';
 	new_list->info.mnt_mode = TRY_UMOUNT_DETACH;
 
 	INIT_LIST_HEAD(&new_list->list);
@@ -635,17 +677,22 @@ void susfs_set_uname(void __user **user_info) {
 		goto out_copy_to_user;
 	}
 
+	info.release[__NEW_UTS_LEN] = '\0';
+	info.version[__NEW_UTS_LEN] = '\0';
+
 	spin_lock(&susfs_uname_spin_lock);
 	if (!strcmp(info.release, "default")) {
 		strncpy(my_uname.release, utsname()->release, __NEW_UTS_LEN);
 	} else {
 		strncpy(my_uname.release, info.release, __NEW_UTS_LEN);
 	}
+	my_uname.release[__NEW_UTS_LEN] = '\0';
 	if (!strcmp(info.version, "default")) {
 		strncpy(my_uname.version, utsname()->version, __NEW_UTS_LEN);
 	} else {
 		strncpy(my_uname.version, info.version, __NEW_UTS_LEN);
 	}
+	my_uname.version[__NEW_UTS_LEN] = '\0';
 	spin_unlock(&susfs_uname_spin_lock);
 	info.err = 0;
 out_copy_to_user:

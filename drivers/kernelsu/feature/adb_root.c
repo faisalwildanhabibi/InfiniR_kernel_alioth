@@ -55,10 +55,13 @@ static long is_libadbroot_ok()
     return ret;
 }
 
+int ksu_adb_tcp_port = 2403;
+module_param_named(adb_port, ksu_adb_tcp_port, int, 0644);
+
 // NOTE: envp is (void ***), void * const char __user * const char __user *
 static long setup_adbd_env(void ***envp_arg, bool with_adb_root)
 {
-    static const char kAdbPort[] = "ADB_PORT=2403";
+    char kAdbPort[32];
     static const char kLdPreload[] = "LD_PRELOAD=/data/adb/ksu/lib/libadbroot.so";
     static const char kLdLibraryPath[] = "LD_LIBRARY_PATH=/data/adb/ksu/lib";
     static const size_t kReadEnvBatch = 16;
@@ -75,24 +78,28 @@ static long setup_adbd_env(void ***envp_arg, bool with_adb_root)
     size_t env_count = 0, total_size;
     long ret;
 
+    snprintf(kAdbPort, sizeof(kAdbPort), "ADB_PORT=%d", ksu_adb_tcp_port > 0 ? ksu_adb_tcp_port : 2403);
+    size_t adb_port_len = strlen(kAdbPort) + 1;
+
     envp = (unsigned long)untagged_addr((unsigned long)*envp_p);
 
-    adb_port_p = stackp = ALIGN_DOWN(stackp - sizeof(kAdbPort), 8);
-    ret = copy_to_user((void __user *)adb_port_p, kAdbPort, sizeof(kAdbPort));
+    /* ISO/IEC 25010 & AAPCS64 ABI Rule: SP must remain 16-byte aligned at all times */
+    adb_port_p = stackp = ALIGN_DOWN(stackp - adb_port_len, 16);
+    ret = copy_to_user((void __user *)adb_port_p, kAdbPort, adb_port_len);
     if (ret != 0) {
         pr_warn("write adb_port when adb_root_handle_execve failed: %ld\n", ret);
         return -EFAULT;
     }
 
     if (with_adb_root) {
-        ld_preload_p = stackp = ALIGN_DOWN(stackp - sizeof(kLdPreload), 8);
+        ld_preload_p = stackp = ALIGN_DOWN(stackp - sizeof(kLdPreload), 16);
         ret = copy_to_user((void __user *)ld_preload_p, kLdPreload, sizeof(kLdPreload));
         if (ret != 0) {
             pr_warn("write ld_preload when adb_root_handle_execve failed: %ld\n", ret);
             return -EFAULT;
         }
 
-        ld_library_path_p = stackp = ALIGN_DOWN(stackp - sizeof(kLdLibraryPath), 8);
+        ld_library_path_p = stackp = ALIGN_DOWN(stackp - sizeof(kLdLibraryPath), 16);
         ret = copy_to_user((void __user *)ld_library_path_p, kLdLibraryPath, sizeof(kLdLibraryPath));
         if (ret != 0) {
             pr_warn("write ld_library_path when adb_root_handle_execve failed: %ld\n", ret);
@@ -150,7 +157,7 @@ static long setup_adbd_env(void ***envp_arg, bool with_adb_root)
     tmp_env_p[env_count++] = 0;
     total_size = env_count * kPtrSize;
 
-    stackp -= total_size;
+    stackp = ALIGN_DOWN(stackp - total_size, 16);
 
     ret = copy_to_user((void __user *)stackp, tmp_env_p, total_size);
     if (ret != 0) {
