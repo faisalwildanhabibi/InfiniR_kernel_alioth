@@ -166,12 +166,9 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 	if (!name || !susfs_is_untrusted_app_process())
 		return false;
 
-	/* 1. Root, Recovery & Module exact names */
-	if (!strcmp(name, "50-lineage.sh") || !strcmp(name, "crdroid-res.apk") ||
-	    !strcmp(name, "LineageSettingsProvider.apk") || !strcmp(name, "LineageParts.apk") ||
-	    !strcmp(name, "LineageParts") || !strcmp(name, "LineageSettingsProvider") ||
-	    !strcmp(name, "LineageSetupWizard") || !strcmp(name, "MiuiCameraOverlayAosp.apk") ||
-	    !strcmp(name, "SetupWizard.prop") || !strcmp(name, "addon.d") ||
+	/* 1. Root, Recovery & Module exact artifact names */
+	if (!strcmp(name, "50-lineage.sh") ||
+	    !strcmp(name, "addon.d") ||
 	    !strcmp(name, "nikgapps_logs") || !strcmp(name, "NoActive") ||
 	    !strcmp(name, "lspd") || !strcmp(name, "zygisk_vector") ||
 	    !strcmp(name, "vector.dex") || !strcmp(name, "liboat_hook64.so") ||
@@ -186,41 +183,10 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 	    susfs_strcasestr(name, "vector_"))
 		return true;
 
-	/* 3. Media library symbol protection */
-	if (!strcmp(name, "libstagefright.so"))
-		return true;
-
-	/* 4. Target system ROM package prefixes & sysconfig / privapp signatures */
-	if (susfs_strcasestr(name, "org.lineageos.") ||
-	    susfs_strcasestr(name, "org.crdroid.") ||
-	    susfs_strcasestr(name, "org.omnirom.") ||
-	    susfs_strcasestr(name, "co.aospa.") ||
-	    susfs_strcasestr(name, "org.protonaosp.") ||
-	    susfs_strcasestr(name, "org.chaldeaprjkt.") ||
-	    susfs_strcasestr(name, "org.evolution.") ||
-	    susfs_strcasestr(name, "org.havoc.") ||
-	    susfs_strcasestr(name, "org.resurrection.") ||
-	    susfs_strcasestr(name, "vendor.lineage.") ||
-	    susfs_strcasestr(name, "lineage-sdk") ||
-	    susfs_strcasestr(name, "lineage-sysconfig") ||
-	    susfs_strcasestr(name, "lineage-component-overrides") ||
-	    susfs_strcasestr(name, "crdroid-product") ||
-	    susfs_strcasestr(name, "lineageparts") ||
-	    susfs_strcasestr(name, "lineagesettings") ||
-	    susfs_strcasestr(name, "Logs-alioth-NikGapps") ||
-	    susfs_strcasestr(name, "Logs-NikGapps"))
-		return true;
-
-	/* 5. System Init scripts containing .lineage */
-	if (susfs_strcasestr(name, ".lineage.") ||
-	    susfs_strcasestr(name, ".lineage-") ||
-	    !strncmp(name, "init.lineage", 12) ||
-	    susfs_strcasestr(name, ".lineage.rc"))
-		return true;
-
-	/* 6. RRO overlay signatures */
-	if (strstr(name, "__lineage_") || strstr(name, "__crdroid_") ||
-	    strstr(name, "__aosp_") || strstr(name, "__auto_generated_rro"))
+	/* 3. Target custom ROM init & build logs */
+	if (susfs_strcasestr(name, "Logs-alioth-NikGapps") ||
+	    susfs_strcasestr(name, "Logs-NikGapps") ||
+	    !strncmp(name, "init.lineage", 12))
 		return true;
 
 	return false;
@@ -229,104 +195,33 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 static inline bool susfs_is_auto_stealth_path(const char *p);
 
 static inline bool susfs_is_cross_app_android_data_probe(const char *p) {
-	const char *data_tag;
-	const char *pkg_start;
-	size_t pkg_len;
-	char pkg_buf[64];
-	size_t comm_len;
-
-	if (!p || !susfs_is_untrusted_app_process())
-		return false;
-
-	/* Shell / Terminal environments have universal access */
-	if (!strcmp(current->comm, "sh") || !strcmp(current->comm, "bash") ||
-	    !strcmp(current->comm, "zsh") || !strcmp(current->comm, "login") ||
-	    !strcmp(current->comm, "tmux"))
-		return false;
-
-	/* Locate Android private package storage roots */
-	data_tag = strstr(p, "/Android/data/");
-	if (data_tag) {
-		pkg_start = data_tag + 14;
-	} else {
-		data_tag = strstr(p, "/Android/obb/");
-		if (data_tag) {
-			pkg_start = data_tag + 13;
-		} else {
-			data_tag = strstr(p, "/Android/media/");
-			if (data_tag) {
-				pkg_start = data_tag + 15;
-			} else {
-				return false;
-			}
-		}
-	}
-
-	/* Extract target package name component */
-	pkg_len = 0;
-	while (pkg_start[pkg_len] && pkg_start[pkg_len] != '/' && pkg_len < sizeof(pkg_buf) - 1) {
-		pkg_buf[pkg_len] = pkg_start[pkg_len];
-		pkg_len++;
-	}
-	pkg_buf[pkg_len] = '\0';
-
-	if (pkg_len == 0)
-		return false;
-
-	comm_len = strlen(current->comm);
-	if (comm_len == 0)
-		return true;
-
-	/* If process comm matches or is a prefix/substring of the target package name, allow access */
-	if (strncasecmp(pkg_buf, current->comm, min(pkg_len, comm_len)) == 0 ||
-	    susfs_strcasestr(pkg_buf, current->comm) ||
-	    susfs_strcasestr(current->comm, pkg_buf))
-		return false;
-
-	/* Cross-app probing detected from unprivileged app */
-	return true;
+	/* Avoid comm truncation false-positives; defer to standard Android AppOps/SuSFS */
+	return false;
 }
 
 static inline bool susfs_is_cross_app_android_data_dentry(const char *name) {
-	size_t nam_len, comm_len;
-	if (!name || !susfs_is_untrusted_app_process())
-		return false;
-
-	/* Shell / Terminal environments have universal access */
-	if (!strcmp(current->comm, "sh") || !strcmp(current->comm, "bash") ||
-	    !strcmp(current->comm, "zsh") || !strcmp(current->comm, "login") ||
-	    !strcmp(current->comm, "tmux"))
-		return false;
-
-	nam_len = strlen(name);
-	comm_len = strlen(current->comm);
-	if (comm_len == 0)
-		return true;
-
-	/* If process comm matches or is a prefix/substring of the dentry package name, allow listing */
-	if (strncasecmp(name, current->comm, min(nam_len, comm_len)) == 0 ||
-	    susfs_strcasestr(name, current->comm) ||
-	    susfs_strcasestr(current->comm, name))
-		return false;
-
-	return true;
+	return false;
 }
 
 static inline bool susfs_is_auto_stealth_path(const char *p) {
 	if (!p || !susfs_is_untrusted_app_process())
 		return false;
 
-	/* Dynamic Scoped Storage boundary check (blocks cross-app probing without package lists) */
-	if (susfs_is_cross_app_android_data_probe(p))
-		return true;
+	/* CRITICAL ISO/IEC 25010 SAFEGUARD: Never hide core system framework, overlays, and system apk assets */
+	if (strstr(p, "/system/framework") || strstr(p, "/system_ext/framework") ||
+	    strstr(p, "/product/framework") || strstr(p, "/vendor/framework") ||
+	    strstr(p, "/system/overlay") || strstr(p, "/product/overlay") ||
+	    strstr(p, "/vendor/overlay") || strstr(p, "/system_ext/overlay") ||
+	    strstr(p, "org.lineageos.platform-res.apk") || strstr(p, "crdroid-res.apk") ||
+	    strstr(p, "framework-res.apk"))
+		return false;
 
 	/* 1. Root & Module Infrastructure: Universal hiding for all present and future modules */
 	if (strstr(p, "/data/adb") || strstr(p, "/system/addon.d") ||
 	    strstr(p, "/dev/__properties__/u:object_r:qemu_hw_prop:s0"))
 		return true;
 
-	/* 2. Dynamic Shell Temp Protection: Untrusted apps cannot see contents of /data/local/tmp.
-	 * Directory itself remains PRESENT naturally, but all payload files inside are isolated (-ENOENT). */
+	/* 2. Dynamic Shell Temp Protection: Untrusted apps cannot see contents of /data/local/tmp */
 	if (strstr(p, "/data/local/tmp/"))
 		return true;
 
@@ -337,43 +232,9 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 	    strstr(p, "/data/misc/magisk"))
 		return true;
 
-	/* 4. Block untrusted apps from reading private media lib stagefright symbols */
-	if (strstr(p, "/system/lib/libstagefright.so") || strstr(p, "/system/lib64/libstagefright.so"))
-		return true;
-
-	/* 5. Custom ROM, Lineage, crDroid, and recovery framework components */
-	if (susfs_strcasestr(p, "lineage") ||
-	    susfs_strcasestr(p, "crdroid") ||
-	    susfs_strcasestr(p, "omnijaws") ||
-	    susfs_strcasestr(p, "omnistyle") ||
-	    susfs_strcasestr(p, "omnirom") ||
-	    susfs_strcasestr(p, "protonaosp") ||
-	    susfs_strcasestr(p, "chaldeaprjkt") ||
-	    susfs_strcasestr(p, "co.aospa") ||
-	    susfs_strcasestr(p, "aospa") ||
-	    susfs_strcasestr(p, "aosp") ||
-	    susfs_strcasestr(p, "paranoid") ||
-	    susfs_strcasestr(p, "nikgapps") ||
-	    susfs_strcasestr(p, "evolution_") ||
-	    susfs_strcasestr(p, "havoc") ||
-	    susfs_strcasestr(p, "resurrection")) {
-		if (strstr(p, "/framework/") || strstr(p, "/overlay/") ||
-		    strstr(p, "/app/") || strstr(p, "/priv-app/") ||
-		    strstr(p, "/etc/permissions/") || strstr(p, "/etc/sysconfig/") ||
-		    strstr(p, "/etc/default-permissions/") || strstr(p, "/etc/init/") ||
-		    strstr(p, "/lib64/vendor.lineage") ||
-		    strstr(p, "/nikgapps_logs") || strstr(p, "50-lineage.sh") ||
-		    strstr(p, "SetupWizard.prop") || strstr(p, "MiuiCameraOverlayAosp"))
-			return true;
-	}
-
-	/* 6. SELinux Policy & File Contexts: Block unprivileged apps (UID >= 10000) from reading SELinux policy files containing ROM artifacts */
-	if (strstr(p, "/etc/selinux/vendor_sepolicy.cil") ||
-	    strstr(p, "/etc/selinux/system_ext_sepolicy.cil") ||
-	    strstr(p, "/etc/selinux/vendor_file_contexts") ||
-	    strstr(p, "/etc/selinux/system_ext_file_contexts") ||
-	    strstr(p, "/etc/selinux/plat_sepolicy.cil") ||
-	    strstr(p, "/etc/selinux/plat_file_contexts"))
+	/* 4. Target custom ROM and recovery artifacts outside framework */
+	if (strstr(p, "/nikgapps_logs") || strstr(p, "50-lineage.sh") ||
+	    strstr(p, "/etc/init/init.lineage"))
 		return true;
 
 	return false;
