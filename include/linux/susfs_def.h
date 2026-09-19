@@ -166,27 +166,18 @@ static inline bool susfs_is_auto_stealth_dentry_name(const char *name) {
 	if (!name || !susfs_is_untrusted_app_process())
 		return false;
 
-	/* 1. Root, Recovery & Module exact artifact names */
-	if (!strcmp(name, "50-lineage.sh") ||
-	    !strcmp(name, "addon.d") ||
-	    !strcmp(name, "nikgapps_logs") || !strcmp(name, "NoActive") ||
-	    !strcmp(name, "lspd") || !strcmp(name, "zygisk_vector") ||
-	    !strcmp(name, "vector.dex") || !strcmp(name, "liboat_hook64.so") ||
+	/* 1. Generic Root, SuSFS & Module runtime infrastructure */
+	if (!strcmp(name, "addon.d") ||
+	    !strcmp(name, "NoActive") ||
+	    !strcmp(name, "lspd") ||
+	    !strcmp(name, "liboat_hook64.so") ||
 	    !strcmp(name, "liboat_hook32.so"))
 		return true;
 
-	/* 2. SUI / HMA / Hook module residue signatures */
+	/* 2. Generic hook & manager temporary residue prefix matching */
 	if (susfs_strcasestr(name, "hide_my_applist") ||
 	    susfs_strcasestr(name, "sui_shell") ||
-	    susfs_strcasestr(name, "simpleHook") ||
-	    susfs_strcasestr(name, "byyang") ||
-	    susfs_strcasestr(name, "vector_"))
-		return true;
-
-	/* 3. Target custom ROM init & build logs */
-	if (susfs_strcasestr(name, "Logs-alioth-NikGapps") ||
-	    susfs_strcasestr(name, "Logs-NikGapps") ||
-	    !strncmp(name, "init.lineage", 12))
+	    susfs_strcasestr(name, "simpleHook"))
 		return true;
 
 	return false;
@@ -242,16 +233,6 @@ static inline bool susfs_is_auto_stealth_path(const char *p) {
 		if (strstr(p, "/dev/__properties__/u:object_r:qemu_hw_prop:s0"))
 			return true;
 	}
-
-	/* Fast Branch 4: /etc init configs */
-	if (p[1] == 'e' && p[2] == 't' && p[3] == 'c' && p[4] == '/') {
-		if (strstr(p, "/etc/init/init.lineage"))
-			return true;
-	}
-
-	/* Fast Branch 5: custom ROM / logs */
-	if (strstr(p, "/nikgapps_logs") || strstr(p, "50-lineage.sh"))
-		return true;
 
 	return false;
 }
