@@ -68,8 +68,8 @@ jobs:
 
       - name: Prepare KernelSU-Next Environment
         run: |
-          KSU_VER="v3.2.0-legacy-susfs-v2"
-          KSU_COUNT="3021"
+          KSU_VER="v3.4.0-legacy-susfs-v2"
+          KSU_COUNT="3400"
           echo "KSU_VERSION_TAG=$KSU_VER" >> $GITHUB_ENV
           echo "KSU_GIT_VERSION=$KSU_COUNT" >> $GITHUB_ENV
 

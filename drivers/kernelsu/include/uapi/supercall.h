@@ -6,8 +6,8 @@
 
 #include "uapi/app_profile.h"
 
-// 2: allowlist v4 root profile flags
-static const __u32 KERNEL_SU_UAPI_VERSION = 2;
+// 4: Manager v3.4.0+ UAPI alignment (multi-profile, sulog v2, init pgrp, hook mode)
+static const __u32 KERNEL_SU_UAPI_VERSION = 4;
 
 /* Magic numbers for reboot hook to install fd */
 static const __u32 KSU_INSTALL_MAGIC1 = 0xDEADBEEF;
@@ -20,6 +20,8 @@ static const __u8 KSU_UMOUNT_GETLIST = 108;
 static const __u32 GET_SULOG_DUMP_V2 = 10010;
 static const __u32 CHANGE_KSUVER = 10011;
 static const __u32 CHANGE_SPOOF_UNAME = 10012;
+static const __u32 GET_DRIVER_HOOK_MODE = 10013;
+static const __u32 GET_DRIVER_VERSION_TAG = 10014;
 
 struct ksu_become_daemon_cmd {
     __u8 token[65]; /* Input: daemon token (null-terminated) */

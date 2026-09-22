@@ -118,13 +118,13 @@ endif
 endif
 
 ifndef KSU_VERSION
-KSU_VERSION := 33221
+KSU_VERSION := 33400
 $(info -- KernelSU-Next default version: $(KSU_VERSION))
 ccflags-y += -DKSU_VERSION=$(KSU_VERSION)
 endif
 
 ifndef KSU_VERSION_TAG
-KSU_VERSION_TAG := v3.2.0-legacy-susfs-v2
+KSU_VERSION_TAG := v3.4.0-legacy-susfs-v2
 $(info -- KernelSU-Next default tag: $(KSU_VERSION_TAG))
 ccflags-y += -DKSU_VERSION_TAG=\"$(KSU_VERSION_TAG)\"
 endif

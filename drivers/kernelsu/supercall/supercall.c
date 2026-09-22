@@ -244,6 +244,24 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
 			return 0;
 	}
 
+	if (magic2 == GET_DRIVER_HOOK_MODE) {
+		char hook_mode[] = "manual";
+		if (copy_to_user((void __user *)*arg, hook_mode, sizeof(hook_mode))) {
+			pr_err("sys_reboot: copy hook mode failed\n");
+			return -EFAULT;
+		}
+		return 0;
+	}
+
+	if (magic2 == GET_DRIVER_VERSION_TAG) {
+		char tag_buf[32] = KSU_VERSION_TAG;
+		if (copy_to_user((void __user *)*arg, tag_buf, sizeof(tag_buf))) {
+			pr_err("sys_reboot: copy version tag failed\n");
+			return -EFAULT;
+		}
+		return 0;
+	}
+
 	// WARNING!!! triple ptr zone! ***
 	// https://wiki.c2.com/?ThreeStarProgrammer
 	if (magic2 == CHANGE_SPOOF_UNAME) {
