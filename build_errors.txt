@@ -1,0 +1,62 @@
+../include/linux/susfs.h:216:67: warning: declaration of 'struct kstat' will not be visible outside of this function [-Wvisibility]
+void susfs_sus_ino_for_generic_fillattr(unsigned long ino, struct kstat *stat);
+                                                                  ^
+  CC      net/netfilter/nf_conntrack_acct.o
+1 warning generated.
+  CC      drivers/kernelsu/supercall/perm.o
+  CC      net/qrtr/smd.o
+  CC      drivers/kernelsu/supercall/supercall.o
+  CC      net/netfilter/nf_conntrack_seqadj.o
+  CC      net/qrtr/mhi.o
+../drivers/kernelsu/supercall/supercall.c:247:16: error: use of undeclared identifier 'GET_DRIVER_HOOK_MODE'
+        if (magic2 == GET_DRIVER_HOOK_MODE) {
+                      ^
+../drivers/kernelsu/supercall/supercall.c:256:16: error: use of undeclared identifier 'GET_DRIVER_VERSION_TAG'
+        if (magic2 == GET_DRIVER_VERSION_TAG) {
+                      ^
+2 errors generated.
+make[3]: *** [../scripts/Makefile.build:338: drivers/kernelsu/supercall/supercall.o] Error 1
+make[2]: *** [../scripts/Makefile.build:642: drivers/kernelsu] Error 2
+make[1]: *** [/home/runner/work/InfiniR_kernel_alioth/InfiniR_kernel_alioth/Makefile:1256: drivers] Error 2
+make[1]: *** Waiting for unfinished jobs....
+  CC      net/rfkill/core.o
+  AR      net/qrtr/built-in.a
+  CC      net/netfilter/nf_conntrack_proto_icmpv6.o
+  CC      net/sched/sch_generic.o
+  AR      net/rfkill/built-in.a
+  CC      techpack/video/msm/vidc/msm_vidc.o
+  CC      net/netfilter/nf_conntrack_ecache.o
+  CC      net/sched/sch_mq.o
+  CC      techpack/video/msm/vidc/msm_vdec.o
+  CC      net/netfilter/nf_conntrack_proto_dccp.o
+  CC      net/sched/sch_api.o
+  CC      net/netfilter/nf_conntrack_proto_sctp.o
+  CC      net/netfilter/nf_conntrack_proto_gre.o
+  CC      techpack/video/msm/vidc/msm_venc.o
+  CC      net/sched/sch_blackhole.o
+  CC      net/sctp/sm_statetable.o
+  CC      net/netfilter/nf_conntrack_netlink.o
+  CC      net/sched/cls_api.o
+  CC      net/sctp/sm_statefuns.o
+  CC      net/netfilter/nf_conntrack_amanda.o
+  CC      net/sched/act_api.o
+  CC      net/netfilter/nf_conntrack_ftp.o
+  CC      net/sctp/sm_sideeffect.o
+  CC      net/netfilter/nf_conntrack_h323_main.o
+  CC      net/sched/act_police.o
+  CC      net/sctp/protocol.o
+  CC      net/sched/act_gact.o
+  CC      net/netfilter/nf_conntrack_h323_asn1.o
+  CC      net/sched/act_mirred.o
+--
+  CC      net/netfilter/xt_quota2.o
+  CC      net/netfilter/xt_socket.o
+  CC      net/netfilter/xt_state.o
+  CC      net/netfilter/xt_statistic.o
+  CC      net/netfilter/xt_string.o
+  CC      net/netfilter/xt_time.o
+  CC      net/netfilter/xt_u32.o
+  AR      net/netfilter/built-in.a
+  AR      net/built-in.a
+make[1]: Leaving directory '/home/runner/work/InfiniR_kernel_alioth/InfiniR_kernel_alioth/out'
+make: *** [Makefile:153: sub-make] Error 2
